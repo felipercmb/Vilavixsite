@@ -1,6 +1,6 @@
 // ── Formatters ──────────────────────────────────────────────
 export const formatCurrency = (val) =>
-  new Intl.NumberFormat('pt-BR', {
+  val === null || val === undefined || val === '' ? 'Sob consulta' : new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
     maximumFractionDigits: 0,
@@ -13,20 +13,22 @@ export const formatCurrencyShort = (val) => {
 };
 
 export const formatDate = (str) => {
-  const [y, m, d] = str.split('-');
+  if (!str) return 'Não informado';
+  const [y, m, d] = str.split('T')[0].split('-');
   return `${d}/${m}/${y}`;
 };
 
 export const formatPhone = (str) => str; // already formatted in data
 
 // ── WhatsApp ────────────────────────────────────────────────
-export const WPP_NUMBER = '5527999887766';
+export const WPP_NUMBER = '5527981360170';
 export const WPP_DEFAULT_MSG = 'Olá! Vim pelo site da VilaVix e gostaria de mais informações.';
 
 export const wppLink = (telefone, mensagem) => {
-  const num = telefone ? telefone.replace(/\D/g, '') : WPP_NUMBER;
+  const raw = String(telefone || WPP_NUMBER).replace(/\D/g, '');
+  const num = raw.startsWith('55') && raw.length >= 12 ? raw : `55${raw}`;
   const msg = mensagem || WPP_DEFAULT_MSG;
-  return `https://wa.me/55${num}?text=${encodeURIComponent(msg)}`;
+  return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
 };
 
 export const wppImovelMsg = (titulo, id) =>
@@ -100,7 +102,7 @@ export const TRANSACOES   = ['Venda', 'Aluguel'];
 
 // ── Initials helper ──────────────────────────────────────────
 export const initials = (name) =>
-  name
+  String(name || '')
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)

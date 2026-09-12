@@ -8,6 +8,10 @@
 /* ── CSS Reset ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; font-size: 16px; }
+.skip-link { position:fixed; left:16px; top:-100px; z-index:1000; background:#fff; color:#152036; padding:12px 20px; border:2px solid #152036; border-radius:6px; }
+.skip-link:focus { top:12px; }
+:focus-visible { outline:3px solid #247fa5; outline-offset:3px; }
+@media (prefers-reduced-motion: reduce) { html {scroll-behavior:auto;} *, *::before, *::after {animation-duration:0.01ms !important; transition-duration:0.01ms !important; animation-iteration-count:1 !important;} }
 body {
   font-family: var(--font-body);
   background: var(--bg);

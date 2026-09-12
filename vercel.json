@@ -1,0 +1,31 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/aluguel", "destination": "/index.html" },
+    { "source": "/imoveis", "destination": "/index.html" },
+    { "source": "/imovel/:path*", "destination": "/index.html" },
+    { "source": "/sobre", "destination": "/index.html" },
+    { "source": "/contato", "destination": "/index.html" },
+    { "source": "/blog", "destination": "/index.html" },
+    { "source": "/login", "destination": "/index.html" },
+    { "source": "/redefinir-senha", "destination": "/index.html" },
+    { "source": "/crm/:path*", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,218 @@
+{
+  "source": "https://vilaviximoveis.com.br",
+  "startedAt": "2026-09-12T18:02:06Z",
+  "updatedAt": "2026-09-12T18:02:07Z",
+  "complete": true,
+  "method": "Public sitemap discovery followed by server-rendered __NEXT_DATA__ on each listing page; plain curl HTTPS requests.",
+  "discovery": [
+    {
+      "url": "https://vilaviximoveis.com.br/sitemap.xml",
+      "status": "ok",
+      "kind": "sitemap-index"
+    },
+    {
+      "url": "https://vilaviximoveis.com.br/all_sites.xml",
+      "status": "ok",
+      "locations": 3,
+      "listingUrls": 0
+    },
+    {
+      "url": "https://vilaviximoveis.com.br/all_imoveis.xml",
+      "status": "ok",
+      "locations": 601,
+      "listingUrls": 601
+    },
+    {
+      "url": "https://vilaviximoveis.com.br/all_buscas_imoveis.xml",
+      "status": "ok",
+      "locations": 402,
+      "listingUrls": 0
+    },
+    {
+      "url": "https://vilaviximoveis.com.br/all_tipos.xml",
+      "status": "ok",
+      "locations": 24,
+      "listingUrls": 0
+    },
+    {
+      "url": "https://vilaviximoveis.com.br/all_cidades.xml",
+      "status": "ok",
+      "locations": 6,
+      "listingUrls": 0
+    },
+    {
+      "url": "https://vilaviximoveis.com.br/all_bairros.xml",
+      "status": "ok",
+      "locations": 45,
+      "listingUrls": 0
+    },
+    {
+      "url": "https://vilaviximoveis.com.br/all_empreendimentos.xml",
+      "status": "ok",
+      "locations": 197,
+      "listingUrls": 0
+    },
+    {
+      "url": "https://vilaviximoveis.com.br/empreendimentos.xml",
+      "status": "ok",
+      "locations": 50,
+      "listingUrls": 0
+    },
+    {
+      "url": "https://vilaviximoveis.com.br/all_blogs.xml",
+      "status": "ok",
+      "locations": 0,
+      "listingUrls": 0
+    },
+    {
+      "url": "https://vilaviximoveis.com.br/blogs.xml",
+      "status": "ok",
+      "locations": 0,
+      "listingUrls": 0
+    }
+  ],
+  "discoveredListingUrls": 601,
+  "sourceHomeCounter": 610,
+  "sourceCityCounterSum": 599,
+  "publicApiAudit": {
+    "endpoint": "https://vilaviximoveis.com.br/api/gql",
+    "authentication": "none",
+    "status": "ok",
+    "pages": 50,
+    "pageSize": 12,
+    "reportedCount": 599,
+    "distinctIds": 599,
+    "missingFromCatalog": [],
+    "notInApi": []
+  },
+  "verifiedCompany": {
+    "name": "VILA VIX IMOVEIS LTDA",
+    "phone": "(27) 98136-0170",
+    "whatsapp": "5527981360170",
+    "email": "atendimento@vilaviximoveis.com.br",
+    "street": "Rua Jair de Andrade, 1222",
+    "district": "Itapuã",
+    "city": "Vila Velha",
+    "state": "ES",
+    "postalCodeAsPublished": "29053-305",
+    "creci": null,
+    "logo": "https://fotos2.fra1.cdn.digitaloceanspaces.com/sites/2169/logo.png",
+    "sourceUrl": "https://vilaviximoveis.com.br"
+  },
+  "importedListings": 599,
+  "failedListings": [],
+  "skippedListings": [
+    {
+      "url": "https://vilaviximoveis.com.br/imoveis/venda/vila-velha/jockey-de-itaparica/ilha-de-okinawa/apartamento/or71990-111754/imovel/2895610",
+      "reason": "Listing not found in public page"
+    },
+    {
+      "url": "https://vilaviximoveis.com.br/imoveis/venda/vila-velha/praia-de-itaparica/top-living-002d-residencial/garden/or74412-115563/imovel/3096303",
+      "reason": "Listing not found in public page"
+    }
+  ],
+  "counts": {
+    "cities": {
+      "Vila Velha": 354,
+      "Vitória": 149,
+      "Serra": 78,
+      "Ibiraçu": 1,
+      "Domingos Martins": 1,
+      "Guarapari": 16
+    },
+    "types": {
+      "Apartamento": 301,
+      "Garden": 130,
+      "Área de Terra": 1,
+      "Studio": 14,
+      "Cobertura Duplex": 47,
+      "Casa em Condomínio": 1,
+      "Casa": 1,
+      "Casa Térrea": 2,
+      "Casa Duplex": 3,
+      "Terreno": 1,
+      "Casa Sobrado": 1,
+      "Residencial": 1,
+      "It House": 1,
+      "Taj Home Resort": 3,
+      "Cobertura": 3,
+      "Apartamento Com Terraço": 10,
+      "Apartamento Duplex": 2,
+      "Sala": 9,
+      "Terreno-Lote Residencial": 11,
+      "Loja": 35,
+      "Cobertura Horizontal": 11,
+      "Loft": 1,
+      "Duplex": 7,
+      "Triplex": 3
+    },
+    "purposes": {
+      "venda": 598,
+      "aluguel": 1
+    },
+    "photos": 15091,
+    "uniquePhotos": 6111,
+    "withoutPhotos": 0,
+    "priceOnRequest": 2,
+    "withoutDescription": 0,
+    "withoutArea": 2
+  },
+  "notes": [
+    "A listing present in the public sitemap/detail page is imported as disponivel unless the source explicitly marks it unavailable. Availability and asking price must be confirmed with the agency.",
+    "Hidden prices, condominium/IPTU fees and addresses are not published even when present in client page data.",
+    "Missing facts remain null/empty; state is filled only when source city ID and public state metadata establish it, never from the agency address.",
+    "The displayed promotional price is used when present, with the original asking price preserved as precoOriginal.",
+    "Photos are original public URLs, including development photos only when usa_fotos_empreendimento is enabled. No stock replacements.",
+    "Area uses private/useful/built/total, in that order; land listings use land/total first. Original area fields and the selected field are preserved."
+  ],
+  "validation": {
+    "uniqueIds": true,
+    "uniqueSlugs": true,
+    "sourceIdAgreement": true,
+    "validPhotoUrls": true,
+    "nonnegativeNumericFields": true,
+    "allHavePhotosAndDescriptions": true,
+    "sampleImageChecks": [
+      {
+        "url": "https://fotos.sobressai.com.br/fotos/2169/2395574/34610269_g.jpg",
+        "result": "200 image/jpeg",
+        "error": null
+      },
+      {
+        "url": "https://fotos.sobressai.com.br/fotos/2169/2399198/32076473_g.jpg",
+        "result": "200 image/jpeg",
+        "error": null
+      },
+      {
+        "url": "https://fotos.sobressai.com.br/fotos/2169/2399205/32076653_g.jpg",
+        "result": "200 image/jpeg",
+        "error": null
+      },
+      {
+        "url": "https://fotos.sobressai.com.br/fotos/2169/2399210/32076793_g.jpg",
+        "result": "200 image/jpeg",
+        "error": null
+      },
+      {
+        "url": "https://static.orulo.com.br/images/properties/large/1898272.jpg",
+        "result": "200 image/jpeg",
+        "error": null
+      },
+      {
+        "url": "https://static.orulo.com.br/images/properties/large/1898305.jpg",
+        "result": "200 image/jpeg",
+        "error": null
+      },
+      {
+        "url": "https://static.orulo.com.br/images/properties/large/1898343.jpg",
+        "result": "200 image/jpeg",
+        "error": null
+      },
+      {
+        "url": "https://static.orulo.com.br/images/properties/large/1898357.jpg",
+        "result": "200 image/jpeg",
+        "error": null
+      }
+    ]
+  }
+}

@@ -1,219 +1,190 @@
-import React, { useState } from 'react';
-import Logo from '../components/Logo.jsx';
-import { Eye, EyeOff, ArrowLeft, Lock, Mail } from 'lucide-react';
-import { authSignIn } from '../lib/db.js';
-
-export default function LoginPage({ onLogin, navigate }) {
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [showPwd, setShowPwd]   = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState('');
-
-  const handleSubmit = async (e) => {
+import React, { useState } from "react";
+import { ArrowLeft, Eye, EyeOff, ArrowRight, LockKeyhole } from "lucide-react";
+import Logo from "../components/Logo.jsx";
+import { authSignIn, authResetPassword } from "../lib/db.js";
+import { Field, Alert } from "./crm/CRMUI.jsx";
+import { catalogSnapshot } from "../lib/catalog.js";
+import "../styles/crm.css";
+export default function LoginPage({ onLogin, navigate, onDemo }) {
+  const [email, setEmail] = useState(""),
+    [password, setPassword] = useState(""),
+    [show, setShow] = useState(false),
+    [loading, setLoading] = useState(false),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
+    [resetMode, setResetMode] = useState(false);
+  const submit = async (e) => {
     e.preventDefault();
-    setError('');
-    if (!email || !password) { setError('Preencha email e senha.'); return; }
     setLoading(true);
-    const { data, error: err } = await authSignIn(email, password);
-    setLoading(false);
-    if (err) {
-      setError('E-mail ou senha incorretos. Verifique suas credenciais.');
-      return;
+    setError("");
+    setNotice("");
+    try {
+      if (resetMode) {
+        const result = await authResetPassword(email.trim());
+        if (result.error) throw result.error;
+        setNotice(
+          "Se este e-mail estiver cadastrado, você receberá as instruções de recuperação.",
+        );
+      } else {
+        const result = await authSignIn(email.trim(), password);
+        if (result.error) throw result.error;
+        if (!result.data?.user)
+          throw new Error("Não foi possível confirmar o acesso.");
+        onLogin(result.data.user);
+      }
+    } catch (err) {
+      setError(
+        err.message === "Invalid login credentials"
+          ? "E-mail ou senha incorretos. Verifique seus dados."
+          : err.message || "Não foi possível acessar. Tente novamente.",
+      );
+    } finally {
+      setLoading(false);
     }
-    onLogin(data.user);
   };
-
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: '100vh' }} className="login-layout">
-      {/* Left — image panel */}
-      <div
+    <main className="crm-login">
+      <section
+        className="crm-login-visual"
         style={{
-          position: 'relative',
-          backgroundImage: 'url(https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&q=80)',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: 48,
-          overflow: 'hidden',
+          backgroundImage: catalogSnapshot[0]?.img
+            ? `url(${catalogSnapshot[0].img})`
+            : undefined,
         }}
       >
-        {/* Overlay */}
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(160deg, rgba(12,21,38,0.85) 0%, rgba(12,21,38,0.6) 100%)' }} />
-
-        {/* Decorative orb */}
-        <div style={{ position: 'absolute', bottom: -80, right: -80, width: 360, height: 360, borderRadius: '50%', background: 'radial-gradient(circle, rgba(198,40,40,0.25) 0%, transparent 70%)', pointerEvents: 'none' }} />
-
-        {/* Top: Logo */}
-        <div style={{ position: 'relative', zIndex: 1 }}>
+        <div>
           <Logo light big />
         </div>
-
-        {/* Bottom: Text */}
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <h1
+        <div>
+          <small>Área da equipe VilaVix</small>
+          <h1>
+            Seu atendimento começa aqui.
+          </h1>
+          <p>
+            Consulte sua carteira, acompanhe as negociações e organize os retornos e visitas do dia.
+          </p>
+        </div>
+      </section>
+      <section className="crm-login-form">
+        <div>
+          <button
+            className="crm-link"
+            onClick={() => navigate("home")}
             style={{
-              fontFamily: 'var(--font-display)',
-              color: 'white',
-              fontSize: 'clamp(2rem, 3.5vw, 3.2rem)',
-              fontWeight: 300,
-              lineHeight: 1.15,
-              marginBottom: 16,
-              letterSpacing: '-0.01em',
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 12,
             }}
           >
-            Área exclusiva<br />
-            <em style={{ fontWeight: 600 }}>dos corretores</em>
-          </h1>
-          <p style={{ color: 'rgba(255,255,255,0.55)', lineHeight: 1.65, maxWidth: 360, fontSize: '0.95rem' }}>
-            Acesse o CRM VilaVix para gerenciar seus leads, imóveis e visitas com praticidade e eficiência.
+            <ArrowLeft size={14} />
+            Voltar ao site
+          </button>
+          <h2>
+            {resetMode
+              ? "Recuperar seu acesso"
+              : "Entrar no CRM"}
+          </h2>
+          <p>
+            {resetMode
+              ? "Informe o e-mail vinculado à sua conta para receber as instruções."
+              : "Entre com a conta cadastrada pela equipe VilaVix."}
           </p>
-
-          {/* Stats strip */}
-          <div style={{ display: 'flex', gap: 32, marginTop: 40 }}>
-            {[
-              { val: '500+', label: 'Imóveis' },
-              { val: '1.2k+', label: 'Clientes' },
-              { val: '33', label: 'Vendas/mês' },
-            ].map((s, i) => (
-              <div key={i}>
-                <div style={{ fontFamily: 'var(--font-display)', color: 'white', fontSize: '1.6rem', fontWeight: 600 }}>{s.val}</div>
-                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginTop: 2 }}>{s.label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Right — form panel */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          padding: '48px 64px',
-          background: 'var(--bg)',
-        }}
-        className="login-form-panel"
-      >
-        {/* Back to site */}
-        <button
-          onClick={() => navigate('home')}
-          style={{
-            position: 'absolute', top: 32, right: 40,
-            display: 'flex', alignItems: 'center', gap: 8,
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--text2)', fontSize: '0.88rem', fontFamily: 'var(--font-body)',
-            padding: '8px 12px', borderRadius: 8,
-            transition: 'all 0.2s ease',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = 'var(--navy)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text2)'; }}
-        >
-          <ArrowLeft size={16} />
-          Voltar ao site
-        </button>
-
-        <div style={{ maxWidth: 400, width: '100%', margin: '0 auto' }}>
-          {/* Header */}
-          <div style={{ marginBottom: 40 }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: 'var(--red-light)', marginBottom: 20 }}>
-              <Lock size={13} style={{ color: 'var(--red)' }} />
-              <span style={{ color: 'var(--red)', fontSize: '0.75rem', fontWeight: 600 }}>Acesso restrito</span>
-            </div>
-            <h2 style={{ fontFamily: 'var(--font-display)', color: 'var(--navy)', fontSize: '2rem', fontWeight: 600, marginBottom: 8 }}>
-              Entrar no CRM
-            </h2>
-            <p style={{ color: 'var(--text2)', fontSize: '0.92rem' }}>
-              Use suas credenciais de corretor para acessar.
-            </p>
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {error && (
-              <div style={{ padding: '12px 16px', background: 'var(--red-light)', borderRadius: 10, color: 'var(--red)', fontSize: '0.88rem', border: '1px solid rgba(198,40,40,0.2)' }}>
-                {error}
-              </div>
-            )}
-
-            <div>
-              <label className="label">E-mail</label>
-              <div style={{ position: 'relative' }}>
-                <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)' }} />
-                <input
-                  className="input"
-                  type="email"
-                  placeholder="corretor@vilavix.com.br"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  style={{ paddingLeft: 42 }}
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <label className="label" style={{ margin: 0 }}>Senha</label>
-                <a href="#" style={{ fontSize: '0.8rem', color: 'var(--red)', fontWeight: 500 }}>Esqueci a senha</a>
-              </div>
-              <div style={{ position: 'relative' }}>
-                <Lock size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)' }} />
-                <input
-                  className="input"
-                  type={showPwd ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  style={{ paddingLeft: 42, paddingRight: 42 }}
-                  required
-                />
+          <Alert>{error}</Alert>
+          <Alert tone="success">{notice}</Alert>
+          <form onSubmit={submit}>
+            <Field label="E-mail">
+              <input
+                type="email"
+                autoComplete="username"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="seu@email.com.br"
+              />
+            </Field>
+            {!resetMode && (
+              <>
+                <Field label="Senha">
+                  <div className="crm-password">
+                    <input
+                      type={show ? "text" : "password"}
+                      autoComplete="current-password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Sua senha"
+                      aria-label="Senha"
+                    />
+                    <button
+                      type="button"
+                      aria-label={show ? "Ocultar senha" : "Mostrar senha"}
+                      onClick={() => setShow((p) => !p)}
+                    >
+                      {show ? <EyeOff size={17} /> : <Eye size={17} />}
+                    </button>
+                  </div>
+                </Field>
                 <button
                   type="button"
-                  onClick={() => setShowPwd(!showPwd)}
-                  style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)' }}
+                  className="crm-link"
+                  style={{ fontSize: 11, alignSelf: "flex-end" }}
+                  onClick={() => {
+                    setResetMode(true);
+                    setError("");
+                    setNotice("");
+                  }}
                 >
-                  {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                  Esqueci minha senha
                 </button>
-              </div>
-            </div>
-
+              </>
+            )}
             <button
-              type="submit"
-              className="btn btn-primary btn-lg"
-              style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}
+              className="crm-btn crm-btn-primary"
               disabled={loading}
+              style={{ width: "100%", padding: 13 }}
             >
-              {loading ? (
-                <span style={{ display: 'inline-block', width: 20, height: 20, border: '2px solid rgba(255,255,255,0.4)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
-              ) : (
-                'Entrar no sistema'
-              )}
+              {loading
+                ? "Aguarde…"
+                : resetMode
+                  ? "Enviar instruções"
+                  : "Entrar"}
+              <ArrowRight size={15} />
             </button>
+            {resetMode && (
+              <button
+                type="button"
+                className="crm-btn"
+                onClick={() => {
+                  setResetMode(false);
+                  setNotice("");
+                  setError("");
+                }}
+              >
+                Voltar para o login
+              </button>
+            )}
           </form>
-
-          <p style={{ marginTop: 32, color: 'var(--text3)', fontSize: '0.8rem', textAlign: 'center' }}>
-            Problemas para acessar?{' '}
-            <a href="#" style={{ color: 'var(--navy)', fontWeight: 600 }}>Contate o suporte</a>
-          </p>
-
-          <div style={{ marginTop: 24, padding: '14px 18px', background: 'white', border: '1px solid var(--line2)', borderRadius: 12, fontSize: '0.8rem', color: 'var(--text2)' }}>
-            <span style={{ fontWeight: 600, color: 'var(--navy)' }}>Acesso:</span> Use as credenciais cadastradas pelo administrador do sistema.
+          {onDemo && (
+            <button
+              className="crm-btn"
+              style={{ width: "100%", marginTop: 12 }}
+              onClick={onDemo}
+            >
+              Abrir ambiente de revisão
+            </button>
+          )}
+          <div className="crm-login-note">
+            <LockKeyhole
+              size={14}
+              style={{ verticalAlign: "middle", marginRight: 7 }}
+            />
+            Acesso exclusivo à equipe autorizada.
+            {onDemo &&
+              " A revisão usa contatos fictícios e não altera os dados de produção."}
           </div>
         </div>
-      </div>
-
-      <style>{`
-        .login-layout { position: relative; }
-        @media (max-width: 768px) {
-          .login-layout { grid-template-columns: 1fr !important; }
-          .login-layout > div:first-child { display: none !important; }
-          .login-form-panel { padding: 48px 24px !important; }
-        }
-      `}</style>
-    </div>
+      </section>
+    </main>
   );
 }

@@ -3,3 +3,10 @@ dist/
 .env
 .env.local
 *.local
+.env.*
+!.env.example
+.local/
+test-results/
+playwright-report/
+vite.config.js.timestamp-*.mjs
+.vercel/

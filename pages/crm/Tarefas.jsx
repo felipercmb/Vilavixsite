@@ -1,410 +1,244 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Phone, MessageCircle, Calendar, Instagram, Mail, CheckSquare,
-  Check, Plus, X, ChevronDown, Search, Filter,
-} from 'lucide-react';
-import { TIPO_TASK } from '../../data/tasks.js';
-import { PRIORITY_COLORS, PRIORITY_LABELS } from '../../utils/helpers.js';
+  Plus,
+  Check,
+  Pencil,
+  Trash2,
+  CalendarDays,
+  Clock,
+  CheckSquare,
+  RotateCcw,
+  MessageCircle,
+} from "lucide-react";
+import {
+  PageHeader,
+  SearchBox,
+  Empty,
+  Stat,
+  Badge,
+  Field,
+  Dialog,
+  Alert,
+  TYPES,
+  today,
+  date,
+  matches,
+  wpp,
+} from "./CRMUI.jsx";
+import { filterPortfolio, groupTasksByDay, postponeTaskDate } from "../../lib/broker-workflow.js";
+import "../../styles/crm-workflows.css";
 
-const TODAY = '2026-03-20';
-
-const TIPO_ICON = {
-  ligacao:   Phone,
-  mensagem:  MessageCircle,
-  visita:    Calendar,
-  instagram: Instagram,
-  email:     Mail,
-  geral:     CheckSquare,
-};
-
-const TIPOS_FILTER  = ['Todos', 'ligacao', 'mensagem', 'visita', 'instagram', 'email', 'geral'];
-const PRIO_FILTER   = ['Todas', 'alta', 'media', 'baixa'];
-const STATUS_FILTER = ['Todas', 'pendente', 'concluida'];
-
-function groupByDate(tasks) {
-  const map = {};
-  tasks.forEach((t) => {
-    if (!map[t.data]) map[t.data] = [];
-    map[t.data].push(t);
-  });
-  return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
-}
-
-function formatDateLabel(dateStr) {
-  if (dateStr === TODAY) return 'Hoje';
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
-  const DAYS   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const MONTHS = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-  return `${DAYS[dt.getDay()]}, ${d} ${MONTHS[m - 1]}`;
-}
-
-// ── New Task Form ─────────────────────────────────────────────────────────────
-function NewTaskForm({ onAdd, onClose, leads }) {
-  const [form, setForm] = useState({
-    titulo: '', tipo: 'ligacao', data: TODAY, hora: '09:00',
-    prioridade: 'media', leadId: '', descricao: '',
-  });
-
+function TaskForm({ task, draft, leads, onSave, onClose, visitsOnly }) {
+  const [form, setForm] = useState(
+      task || {
+        titulo: "",
+        descricao: "",
+        tipo: visitsOnly ? "visita" : "ligacao",
+        leadId: null,
+        data: today(),
+        hora: "09:00",
+        prioridade: "media",
+        ...(draft || {}),
+      },
+    ),
+    [saving, setSaving] = useState(false),
+    [error, setError] = useState("");
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
-
-  const submit = (e) => {
-    e.preventDefault();
-    if (!form.titulo.trim()) return;
-    onAdd({
-      ...form,
-      leadId: form.leadId ? Number(form.leadId) : null,
-    });
-    onClose();
-  };
-
   return (
-    <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* Título */}
-      <div>
-        <label style={labelStyle}>Título *</label>
-        <input
-          className="input"
-          placeholder="Ex: Ligar para João"
-          value={form.titulo}
-          onChange={(e) => set('titulo', e.target.value)}
-          required
-          style={{ marginTop: 4 }}
-        />
-      </div>
-
-      {/* Tipo + Prioridade */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div>
-          <label style={labelStyle}>Tipo</label>
-          <select className="select" value={form.tipo} onChange={(e) => set('tipo', e.target.value)} style={{ marginTop: 4, width: '100%' }}>
-            {Object.entries(TIPO_TASK).map(([k, v]) => (
-              <option key={k} value={k}>{v.label}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label style={labelStyle}>Prioridade</label>
-          <select className="select" value={form.prioridade} onChange={(e) => set('prioridade', e.target.value)} style={{ marginTop: 4, width: '100%' }}>
-            {PRIO_FILTER.slice(1).map((p) => (
-              <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Data + Hora */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div>
-          <label style={labelStyle}>Data</label>
-          <input type="date" className="input" value={form.data} onChange={(e) => set('data', e.target.value)} style={{ marginTop: 4 }} />
-        </div>
-        <div>
-          <label style={labelStyle}>Hora</label>
-          <input type="time" className="input" value={form.hora} onChange={(e) => set('hora', e.target.value)} style={{ marginTop: 4 }} />
-        </div>
-      </div>
-
-      {/* Lead opcional */}
-      <div>
-        <label style={labelStyle}>Lead relacionado (opcional)</label>
-        <select className="select" value={form.leadId} onChange={(e) => set('leadId', e.target.value)} style={{ marginTop: 4, width: '100%' }}>
-          <option value="">— Nenhum —</option>
-          {leads.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
-        </select>
-      </div>
-
-      {/* Descrição */}
-      <div>
-        <label style={labelStyle}>Descrição</label>
-        <textarea
-          className="input"
-          placeholder="Detalhes sobre a tarefa..."
-          value={form.descricao}
-          onChange={(e) => set('descricao', e.target.value)}
-          rows={3}
-          style={{ marginTop: 4, resize: 'vertical', minHeight: 72 }}
-        />
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4 }}>
-        <button type="button" onClick={onClose} className="btn btn-outline" style={{ padding: '9px 18px', fontSize: '0.85rem' }}>
-          Cancelar
-        </button>
-        <button type="submit" className="btn btn-primary" style={{ padding: '9px 18px', fontSize: '0.85rem' }}>
-          Adicionar tarefa
-        </button>
-      </div>
-    </form>
-  );
-}
-
-const labelStyle = { fontSize: '0.75rem', fontWeight: 600, color: 'var(--text3)' };
-
-// ── Task Card ─────────────────────────────────────────────────────────────────
-function TaskCard({ task, toggleTask, goToLead, leads }) {
-  const [expanded, setExpanded] = useState(false);
-  const tt       = TIPO_TASK[task.tipo]   || TIPO_TASK.geral;
-  const TipoIcon = TIPO_ICON[task.tipo]   || CheckSquare;
-  const lead     = task.leadId ? leads.find((l) => l.id === task.leadId) : null;
-  const prioColor = PRIORITY_COLORS[task.prioridade] || '#6B7280';
-
-  return (
-    <div
-      className="card"
-      style={{
-        padding: '14px 18px',
-        opacity: task.concluida ? 0.6 : 1,
-        transition: 'opacity 0.25s ease',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        {/* Checkbox */}
-        <button
-          onClick={() => toggleTask(task.id)}
-          style={{
-            width: 20, height: 20, borderRadius: 6, flexShrink: 0, marginTop: 2,
-            border: `2px solid ${task.concluida ? tt.color : 'var(--line2)'}`,
-            background: task.concluida ? tt.color : 'white',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', transition: 'all 0.2s ease',
-          }}
-        >
-          {task.concluida && <Check size={11} strokeWidth={3} color="white" />}
-        </button>
-
-        {/* Content */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-            <span
-              style={{
-                fontWeight: 600, fontSize: '0.88rem', color: 'var(--navy)',
-                textDecoration: task.concluida ? 'line-through' : 'none',
-              }}
-            >
-              {task.titulo}
-            </span>
-            {/* Priority dot */}
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: prioColor, flexShrink: 0 }} />
-          </div>
-
-          {/* Meta row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {/* Tipo badge */}
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 6, background: tt.bg, fontSize: '0.72rem', fontWeight: 600, color: tt.color }}>
-              <TipoIcon size={10} />
-              {tt.label}
-            </span>
-
-            {/* Hora */}
-            <span style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>{task.hora}</span>
-
-            {/* Lead link */}
-            {lead && (
-              <button
-                onClick={() => goToLead(lead.id)}
-                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: '0.75rem', color: 'var(--navy)', fontWeight: 500, fontFamily: 'var(--font-body)', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3 }}
-              >
-                {lead.nome.split(' ')[0]}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Expand toggle (if has description) */}
-        {task.descricao && (
-          <button
-            onClick={() => setExpanded(!expanded)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 2, flexShrink: 0, transition: 'transform 0.2s', transform: expanded ? 'rotate(180deg)' : 'none' }}
-          >
-            <ChevronDown size={15} />
-          </button>
-        )}
-      </div>
-
-      {/* Description */}
-      {expanded && task.descricao && (
-        <p style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line)', fontSize: '0.82rem', color: 'var(--text2)', lineHeight: 1.6, paddingLeft: 32 }}>
-          {task.descricao}
-        </p>
-      )}
-    </div>
-  );
-}
-
-// ── Main Component ────────────────────────────────────────────────────────────
-export default function Tarefas({ tasks, toggleTask, addTask, goToLead, leads }) {
-  const [showForm,  setShowForm]  = useState(false);
-  const [busca,     setBusca]     = useState('');
-  const [tipoF,     setTipoF]     = useState('Todos');
-  const [prioF,     setPrioF]     = useState('Todas');
-  const [statusF,   setStatusF]   = useState('Todas');
-
-  const filtered = useMemo(() => {
-    return tasks.filter((t) => {
-      if (tipoF   !== 'Todos'    && t.tipo             !== tipoF)            return false;
-      if (prioF   !== 'Todas'    && t.prioridade        !== prioF)           return false;
-      if (statusF === 'pendente'  && t.concluida)                            return false;
-      if (statusF === 'concluida' && !t.concluida)                           return false;
-      if (busca) {
-        const q = busca.toLowerCase();
-        const leadNome = t.leadId ? (leads.find(l => l.id === t.leadId)?.nome || '') : '';
-        if (!`${t.titulo} ${t.descricao} ${leadNome}`.toLowerCase().includes(q)) return false;
+    <Dialog
+      title={
+        task
+          ? "Editar atividade"
+          : visitsOnly
+            ? "Agendar visita"
+            : "Nova atividade"
       }
-      return true;
-    });
-  }, [tasks, tipoF, prioF, statusF, busca, leads]);
-
-  const grouped  = groupByDate(filtered);
-  const total    = tasks.length;
-  const done     = tasks.filter((t) => t.concluida).length;
-  const pending  = total - done;
-
-  return (
-    <div style={{ padding: 32 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, flexWrap: 'wrap', gap: 16 }}>
-        <div>
-          <h2 style={{ fontFamily: 'var(--font-display)', color: 'var(--navy)', fontSize: '1.4rem' }}>Tarefas</h2>
-          <p style={{ color: 'var(--text3)', fontSize: '0.82rem', marginTop: 2 }}>
-            {pending} pendente{pending !== 1 ? 's' : ''} · {done} concluída{done !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="btn btn-primary"
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', fontSize: '0.88rem' }}
-        >
-          <Plus size={16} /> Nova tarefa
-        </button>
-      </div>
-
-      {/* Progress bar */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>Progresso geral</span>
-          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--navy)' }}>
-            {total > 0 ? Math.round((done / total) * 100) : 0}%
-          </span>
-        </div>
-        <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 6, overflow: 'hidden' }}>
-          <div style={{
-            height: '100%',
-            width: total > 0 ? `${(done / total) * 100}%` : '0%',
-            background: 'var(--green)',
-            borderRadius: 6,
-            transition: 'width 0.5s ease',
-          }} />
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 28, flexWrap: 'wrap', alignItems: 'center' }}>
-        {/* Search */}
-        <div style={{ position: 'relative', flex: '1 1 200px', maxWidth: 260 }}>
-          <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)' }} />
-          <input
-            className="input"
-            placeholder="Buscar tarefa..."
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            style={{ paddingLeft: 36, height: 38 }}
-          />
-        </div>
-
-        {/* Tipo */}
-        <select className="select" value={tipoF} onChange={(e) => setTipoF(e.target.value)} style={{ height: 38, flex: '1 1 130px', maxWidth: 160 }}>
-          {TIPOS_FILTER.map((t) => (
-            <option key={t} value={t}>{t === 'Todos' ? 'Todos os tipos' : TIPO_TASK[t]?.label || t}</option>
-          ))}
-        </select>
-
-        {/* Prioridade */}
-        <select className="select" value={prioF} onChange={(e) => setPrioF(e.target.value)} style={{ height: 38, flex: '1 1 130px', maxWidth: 160 }}>
-          {PRIO_FILTER.map((p) => (
-            <option key={p} value={p}>{p === 'Todas' ? 'Todas as prioridades' : PRIORITY_LABELS[p]}</option>
-          ))}
-        </select>
-
-        {/* Status */}
-        <select className="select" value={statusF} onChange={(e) => setStatusF(e.target.value)} style={{ height: 38, flex: '1 1 130px', maxWidth: 160 }}>
-          {STATUS_FILTER.map((s) => (
-            <option key={s} value={s}>
-              {s === 'Todas' ? 'Todas' : s === 'pendente' ? 'Pendentes' : 'Concluídas'}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* New Task Modal */}
-      {showForm && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowForm(false); }}
-        >
-          <div
-            className="card"
-            style={{ width: '100%', maxWidth: 520, padding: 28, animation: 'scaleUp 0.25s cubic-bezier(.22,1,.36,1)' }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ fontFamily: 'var(--font-display)', color: 'var(--navy)', fontSize: '1.15rem' }}>Nova tarefa</h3>
-              <button onClick={() => setShowForm(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)' }}>
-                <X size={18} />
-              </button>
-            </div>
-            <NewTaskForm onAdd={addTask} onClose={() => setShowForm(false)} leads={leads} />
+      subtitle="Data, contato e detalhes da atividade."
+      onClose={onClose}
+    >
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setSaving(true);
+          setError("");
+          try {
+            await onSave({ ...form, titulo: form.titulo.trim() });
+            onClose();
+          } catch (err) {
+            setError(err.message);
+          } finally {
+            setSaving(false);
+          }
+        }}
+      >
+        <div className="crm-dialog-body">
+          <Alert>{error}</Alert>
+          <div className="crm-form-grid">
+            <Field label="Título *" wide>
+              <input
+                required
+                value={form.titulo}
+                onChange={(e) => set("titulo", e.target.value)}
+                maxLength={180}
+                placeholder={
+                  visitsOnly
+                    ? "Ex.: visitar apartamento em Itaparica"
+                    : "Ex.: retornar contato do cliente"
+                }
+              />
+            </Field>
+            <Field label="Tipo">
+              <select
+                value={form.tipo}
+                onChange={(e) => set("tipo", e.target.value)}
+                disabled={visitsOnly}
+              >
+                {Object.entries(TYPES).map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Prioridade">
+              <select
+                value={form.prioridade || "media"}
+                onChange={(e) => set("prioridade", e.target.value)}
+              >
+                <option value="baixa">Baixa</option>
+                <option value="media">Média</option>
+                <option value="alta">Alta</option>
+              </select>
+            </Field>
+            <Field label="Data *">
+              <input
+                type="date"
+                required
+                value={form.data || ""}
+                onChange={(e) => set("data", e.target.value)}
+              />
+            </Field>
+            <Field label="Horário *">
+              <input
+                type="time"
+                required
+                value={form.hora || ""}
+                onChange={(e) => set("hora", e.target.value)}
+              />
+            </Field>
+            <Field label="Contato relacionado" wide>
+              <select
+                value={form.leadId || ""}
+                onChange={(e) =>
+                  set(
+                    "leadId",
+                    leads.find((l) => String(l.id) === e.target.value)?.id ||
+                      null,
+                  )
+                }
+              >
+                <option value="">Atividade geral, sem contato vinculado</option>
+                {leads.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.nome}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field
+              label={
+                visitsOnly
+                  ? "Endereço, imóvel e instruções da visita"
+                  : "Detalhes"
+              }
+              wide
+            >
+              <textarea
+                value={form.descricao || ""}
+                onChange={(e) => set("descricao", e.target.value)}
+                rows={3}
+              />
+            </Field>
           </div>
         </div>
-      )}
-
-      {/* Task groups */}
-      {grouped.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text3)' }}>
-          <CheckSquare size={40} style={{ opacity: 0.25, margin: '0 auto 12px' }} />
-          <p style={{ fontSize: '0.9rem' }}>Nenhuma tarefa encontrada.</p>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-          {grouped.map(([date, dateTasks]) => {
-            const sorted = [...dateTasks].sort((a, b) => a.hora.localeCompare(b.hora));
-            const doneCount    = sorted.filter((t) => t.concluida).length;
-            const isToday      = date === TODAY;
-
-            return (
-              <section key={date}>
-                {/* Date header */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {isToday && (
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--red)', animation: 'glow 2s ease-in-out infinite', flexShrink: 0 }} />
-                    )}
-                    <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: isToday ? 'var(--navy)' : 'var(--text2)', fontSize: isToday ? '1rem' : '0.92rem' }}>
-                      {formatDateLabel(date)}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text3)', background: 'var(--bg3)', padding: '2px 8px', borderRadius: 6 }}>
-                    {doneCount}/{sorted.length}
-                  </span>
-                  <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
-                </div>
-
-                {/* Tasks */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {sorted.map((task) => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      toggleTask={toggleTask}
-                      goToLead={goToLead}
-                      leads={leads}
-                    />
-                  ))}
-                </div>
-              </section>
-            );
-          })}
-        </div>
-      )}
-    </div>
+        <footer className="crm-dialog-footer">
+          <button type="button" className="crm-btn" onClick={onClose}>
+            Cancelar
+          </button>
+          <button
+            className="crm-btn crm-btn-primary"
+            disabled={saving || !form.titulo.trim()}
+          >
+            {saving
+              ? "Salvando…"
+              : task
+                ? "Salvar alterações"
+                : visitsOnly
+                  ? "Agendar visita"
+                  : "Criar atividade"}
+          </button>
+        </footer>
+      </form>
+    </Dialog>
   );
+}
+function readAgendaFilters(key) {
+  try { return JSON.parse(sessionStorage.getItem(key) || "{}"); } catch { return {}; }
+}
+export default function Tarefas({ tasks, leads, addTask, updateTask, deleteTask, toggleTask, goToLead, visitsOnly = false, currentProfile, portfolioScope = "all", setPortfolioScope, taskDraft, setTaskDraft, agendaFilter, setAgendaFilter }) {
+  const filterKey = `vilavix:agenda-filters:${visitsOnly ? "visitas" : "tarefas"}:v1`;
+  const [preferences] = useState(() => readAgendaFilters(filterKey));
+  const [q, setQ] = useState(preferences.q || ""), [tab, setTab] = useState(preferences.tab || "pending"), [type, setType] = useState(preferences.type || ""), [selectedDate, setSelectedDate] = useState(preferences.selectedDate || "");
+  const [editing, setEditing] = useState(null), [creating, setCreating] = useState(false), [draft, setDraft] = useState(null), [deleting, setDeleting] = useState(null), [busy, setBusy] = useState(null), [error, setError] = useState(""), [message, setMessage] = useState("");
+  const day = today();
+  useEffect(() => { try { sessionStorage.setItem(filterKey, JSON.stringify({ q, tab, type, selectedDate })); } catch {} }, [filterKey, q, tab, type, selectedDate]);
+  useEffect(() => {
+    if (!taskDraft) return;
+    if (taskDraft.taskId) {
+      const task = tasks.find((t) => String(t.id) === String(taskDraft.taskId));
+      if (task) setEditing(task); else setError("Atividade não encontrada. Atualize os dados da agenda.");
+    } else {
+      const lead = leads.find((l) => String(l.id) === String(taskDraft.leadId));
+      setDraft({ ...taskDraft, titulo: taskDraft.titulo || (lead ? `${taskDraft.tipo === "visita" ? "Visita com" : "Retornar contato de"} ${lead.nome}` : "") });
+      setCreating(true);
+    }
+    setTaskDraft?.(null);
+  }, [taskDraft, setTaskDraft, tasks, leads]);
+  useEffect(() => { if (!agendaFilter) return; setTab(agendaFilter); setQ(""); setType(""); setSelectedDate(""); setAgendaFilter?.(null); }, [agendaFilter, setAgendaFilter]);
+  const scopedIds = new Set(filterPortfolio(leads, portfolioScope, currentProfile).map((l) => String(l.id)));
+  const base = tasks.filter((t) => (!visitsOnly || t.tipo === "visita") && (portfolioScope === "all" || !t.leadId || scopedIds.has(String(t.leadId))));
+  const filtered = useMemo(() => base.filter((t) => matches([t.titulo, t.descricao, leads.find((l) => String(l.id) === String(t.leadId))?.nome].join(" "), q) && (!type || t.tipo === type) && (!selectedDate || t.data === selectedDate) && (tab === "all" || (tab === "done" ? t.concluida : !t.concluida && (tab === "today" ? t.data === day : tab === "overdue" ? t.data && t.data < day : true)))), [base, q, type, selectedDate, tab, leads, day]);
+  const groups = groupTasksByDay(filtered);
+  const run = async (id, fn) => { setBusy(id); setError(""); setMessage(""); try { await fn(); } catch (err) { setError(err.message); } finally { setBusy(null); } };
+  const closeForm = () => { setCreating(false); setEditing(null); setDraft(null); };
+  return <>
+    <PageHeader title={visitsOnly ? "Visitas" : "Agenda"} eyebrow="Atendimento" description={visitsOnly ? "Horários, clientes e imóveis que serão visitados." : "Ligações, retornos e compromissos por dia."}>
+      <button className="crm-btn crm-btn-primary" onClick={() => { setDraft(null); setCreating(true); }}><Plus size={15} />{visitsOnly ? "Agendar visita" : "Nova atividade"}</button>
+    </PageHeader>
+    <div className="crm-scope-bar">{setPortfolioScope && <div className="crm-tabs">{[["all", "Toda a equipe"], ["mine", "Minha carteira"], ["unassigned", "Sem responsável"]].map(([value, label]) => <button key={value} className={portfolioScope === value ? "active" : ""} onClick={() => setPortfolioScope(value)}>{label}</button>)}</div>}<span className="crm-result-count">{base.filter((t) => !t.concluida && t.data === day).length} para hoje · {base.filter((t) => !t.concluida && t.data && t.data < day).length} em atraso</span></div>
+    <Alert>{error}</Alert>{message && <p role="status" className="crm-confirmed-note">{message}</p>}
+    <div className="crm-toolbar"><div className="crm-tabs">{[["pending", "Pendentes"], ["today", "Hoje"], ["overdue", "Em atraso"], ["done", "Concluídas"], ["all", "Todas"]].map(([value, label]) => <button key={value} className={tab === value ? "active" : ""} onClick={() => { setTab(value); setSelectedDate(""); }}>{label}</button>)}</div></div>
+    <div className="crm-toolbar">
+      <SearchBox value={q} onChange={setQ} placeholder="Buscar atividade ou contato" />
+      {!visitsOnly && <select aria-label="Filtrar tipo de atividade" value={type} onChange={(e) => setType(e.target.value)}><option value="">Todos os tipos</option>{Object.entries(TYPES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>}
+      <input aria-label="Filtrar data" type="date" value={selectedDate} onChange={(e) => { setSelectedDate(e.target.value); setTab("all"); }} />
+      {(q || type || selectedDate) && <button className="crm-btn crm-btn-small" onClick={() => { setQ(""); setType(""); setSelectedDate(""); }}>Limpar filtros</button>}
+      <span className="crm-result-count">{filtered.length} atividade{filtered.length !== 1 ? "s" : ""}</span>
+    </div>
+    {groups.length ? <div className="crm-agenda-days">{groups.map((group) => <section key={group.day} className={`crm-agenda-day ${group.day && group.day < day ? "overdue" : ""}`}>
+      <header className="crm-agenda-day-heading"><CalendarDays size={16} /><h2>{group.day === day ? "Hoje" : group.day ? new Date(`${group.day}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }) : "Sem data"}</h2><span>{group.tasks.length} atividade{group.tasks.length !== 1 ? "s" : ""}</span>{group.day && group.day < day && group.tasks.some((t) => !t.concluida) && <Badge status="alta">Em atraso</Badge>}</header>
+      {group.tasks.map((t) => { const lead = leads.find((l) => String(l.id) === String(t.leadId)); const targetDate = postponeTaskDate(t.data, 1, day); return <article key={t.id} className={`crm-agenda-item ${t.concluida ? "done" : ""}`}>
+        <button className={`crm-task-check ${t.concluida ? "checked" : ""}`} aria-label={`${t.concluida ? "Reabrir" : "Concluir"} ${t.titulo}`} disabled={busy === t.id} onClick={() => run(t.id, async () => { await toggleTask(t.id); setMessage(t.concluida ? "Atividade reaberta." : "Atividade concluída."); })}>{t.concluida && <Check size={13} />}</button>
+        <time className="crm-agenda-time">{t.hora?.slice(0, 5) || "—"}</time>
+        <div className="crm-agenda-copy"><button className="crm-link" onClick={() => setEditing(t)}>{t.titulo}</button><small><span>{TYPES[t.tipo] || t.tipo}</span>{lead ? <button className="crm-link" onClick={() => goToLead(lead.id)}>{lead.nome}</button> : <span>Atividade da equipe</span>}{t.prioridade === "alta" && <span>Prioridade alta</span>}</small>{t.descricao && <p>{t.descricao}</p>}</div>
+        <div className="crm-actions">
+          {lead && wpp(lead.telefone) && <a className="crm-icon-btn" href={wpp(lead.telefone)} target="_blank" rel="noreferrer" aria-label={`WhatsApp de ${lead.nome}`}><MessageCircle size={14} /></a>}
+          {!t.concluida && <button className="crm-btn crm-btn-small" aria-label={`Adiar ${t.titulo} para ${date(targetDate)}`} disabled={busy === t.id} onClick={() => run(t.id, async () => { await updateTask(t.id, { data: targetDate }); setMessage(`Atividade reagendada para ${date(targetDate)} às ${t.hora?.slice(0, 5) || "horário não definido"}.`); })}><RotateCcw size={12} />{!t.data || t.data <= day ? "Amanhã" : "+1 dia"}</button>}
+          <button className="crm-icon-btn" aria-label={`Editar ${t.titulo}`} onClick={() => setEditing(t)}><Pencil size={13} /></button><button className="crm-icon-btn" aria-label={`Excluir ${t.titulo}`} onClick={() => setDeleting(t)}><Trash2 size={13} /></button>
+        </div>
+      </article>; })}
+    </section>)}</div> : <section className="crm-card"><Empty title="Nenhuma atividade nesta seleção" text="Ajuste os filtros ou agende uma atividade."><button className="crm-btn" onClick={() => setCreating(true)}>{visitsOnly ? "Agendar visita" : "Criar atividade"}</button></Empty></section>}
+    {(creating || editing) && <TaskForm task={editing} draft={draft} leads={leads} visitsOnly={visitsOnly} onClose={closeForm} onSave={(t) => editing ? updateTask(editing.id, t) : addTask(t)} />}
+    {deleting && <Dialog title="Excluir atividade?" subtitle={deleting.titulo} onClose={() => setDeleting(null)}><div className="crm-dialog-body"><p className="crm-text-muted">A atividade será removida da agenda.</p><Alert>{error}</Alert></div><footer className="crm-dialog-footer"><button className="crm-btn" onClick={() => setDeleting(null)}>Cancelar</button><button className="crm-btn crm-btn-danger" disabled={busy === deleting.id} onClick={() => run(deleting.id, async () => { await deleteTask(deleting.id); setDeleting(null); })}>Excluir atividade</button></footer></Dialog>}
+  </>;
 }
