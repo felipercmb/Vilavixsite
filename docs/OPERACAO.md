@@ -32,14 +32,18 @@ A distribuição exige participantes selecionados, corretor ativo, peso positivo
 
 | Ambiente | Endereço | Projeto Supabase | Situação verificada |
 | --- | --- | --- | --- |
-| Produção real solicitada | https://vilavix.com | `xrbegboejhaumwbtpuej` | A versão ativa usa esse banco, identificado no bundle `assets/index-BOGP8JQA.js`. O acesso administrativo ao banco e à conta Vercel responsável ainda precisa ser obtido. |
+| Produção real solicitada | https://vilavix.com | `xrbegboejhaumwbtpuej` | A versão ativa usa esse banco, identificado no bundle `assets/index-BOGP8JQA.js`. Acesso Vercel confirmado na equipe VilaVix / projeto vilavixsite. O acesso administrativo ao banco ainda está pendente. |
 | Publicação provisória deste repositório | https://vilavix-imoveis.vercel.app | `zinayjqfgvywlmybhvvy` | Build publicado e migrações aplicadas neste projeto separado. Não substitui a produção em `vilavix.com`. |
 
 O projeto `zinayjqfgvywlmybhvvy` foi restaurado e recebeu as quatro migrações de catálogo, campanhas, acesso e carteira de aluguel pelo SQL Editor autenticado. Seus registros existentes foram preservados. Essas operações e verificações se referem exclusivamente ao ambiente provisório; nenhuma migração foi aplicada ou validada em `xrbegboejhaumwbtpuej`.
 
-A sessão Supabase disponível redireciona a tentativa de abrir `xrbegboejhaumwbtpuej` para a organização VilaVix antiga. Na conta Vercel atual, Felipe Cristino's projects, a consulta ao domínio `vilavix.com` retornou 403. A associação ao projeto provisório foi tentada, ficou `verified: false` e foi removida com confirmação HTTP 200. Essa remoção atingiu somente a associação criada durante a tentativa; o domínio no projeto original, seu DNS e o banco ativo não foram alterados. Após a remoção, `vilavix.com` continuou respondendo HTTP 200 com a versão anterior.
+A sessão Supabase disponível redireciona a tentativa de abrir `xrbegboejhaumwbtpuej` para a organização VilaVix antiga. Na conta Vercel anterior, Felipe Cristino's projects, a consulta ao domínio `vilavix.com` retornou 403. A associação ao projeto provisório foi tentada, ficou `verified: false` e foi removida com confirmação HTTP 200. Essa remoção atingiu somente a associação criada durante a tentativa; o domínio no projeto original, seu DNS e o banco ativo não foram alterados. Após a remoção, `vilavix.com` continuou respondendo HTTP 200 com a versão anterior.
 
-Não alterar o banco, o DNS ou a versão ativa de `vilavix.com` antes de obter acesso às contas corretas e verificar o esquema, os usuários e a compatibilidade das migrações no banco realmente utilizado. Também não substituir a referência do banco ativo pela do ambiente provisório para contornar a falta de acesso.
+O acesso Vercel foi confirmado posteriormente pela conta `atendimentovilavix@gmail.com` (`atendimentovilavix-8013`), usando o login ChatGPT já vinculado. O usuário autorizou o MCP para a equipe **VilaVix** (`vila-vix`, `team_AEKV7YqahZWh6kHMZb3U4Bjr`), com o projeto **vilavixsite** (`prj_GqrVaqLnKfPJZZPYZFm47WCcRYyX`) selecionado. `.vercel/project.json` aponta agora para esse destino. O projeto já possui `vilavix.com` e `www.vilavix.com`; não é necessário transferir o domínio ao projeto provisório.
+
+A publicação ainda ativa é `dpl_B2SJ3oRa3R9EKNeXLtZnjAe18zKu`, de 17/07/2026, em `vilavixsite-gcg8xcoc0-vila-vix.vercel.app`. Seus metadados citam a branch `feat/roleta-segmentada-e-crm-mobile`, SHA `11405b1e5f477e0889bda6e7ee2241e426687e42` e alterações locais não commitadas (`git_dirty: true`). Esse commit não está disponível no clone nem no GitHub atual. Nenhum novo deploy foi feito nesse projeto durante a conexão.
+
+Não alterar o banco ou a versão ativa de `vilavix.com` antes de obter acesso administrativo ao Supabase e verificar o esquema, os usuários e a compatibilidade das migrações no banco realmente utilizado. Também não substituir a referência do banco ativo pela do ambiente provisório para contornar a falta de acesso.
 
 ## Preparar o banco para publicação
 
@@ -61,9 +65,9 @@ O fluxo de receber automaticamente novos leads da Meta por webhook ainda depende
 
 ## Pendências de ativação em 12/09/2026
 
-- Obter acesso à conta Vercel responsável por `vilavix.com` e ao Supabase `xrbegboejhaumwbtpuej`. A nova publicação no domínio solicitado permanece pendente; nenhuma migração ou troca de banco deve ser presumida concluída nesse ambiente.
+- Obter acesso administrativo ao Supabase `xrbegboejhaumwbtpuej`; o acesso Vercel ao projeto real já foi confirmado. A nova publicação no domínio solicitado permanece pendente; nenhuma migração ou troca de banco deve ser presumida concluída nesse ambiente.
 - A carteira privada foi criada sem membros somente em `zinayjqfgvywlmybhvvy`. Confirmar as contas exatas de Weder, Wellington e Felipe no banco correto antes de provisionar UUIDs ou conceder acesso.
-- URL/chave pública do Supabase provisório e variáveis Zernio estão configuradas no projeto Vercel provisório. A chave privada `SUPABASE_SERVICE_ROLE_KEY` ainda precisa ser configurada para a sincronização de campanhas; sem ela, a API retorna 503 sem expor dados. Essa chave não é necessária para a carteira de aluguel, que usa a sessão do usuário e funções protegidas no banco. As variáveis da produção real não foram verificadas nem alteradas.
+- URL/chave pública do Supabase provisório e variáveis Zernio estão configuradas no projeto Vercel provisório. A chave privada `SUPABASE_SERVICE_ROLE_KEY` ainda precisa ser configurada para a sincronização de campanhas; sem ela, a API retorna 503 sem expor dados. Essa chave não é necessária para a carteira de aluguel, que usa a sessão do usuário e funções protegidas no banco. No projeto real, foram verificados somente os nomes `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`, configurados para Production como segredos sem leitura posterior. Seus valores não foram alterados. As variáveis do servidor e da Zernio ainda precisam ser configuradas nessa publicação, usando o banco real.
 - Os 599 imóveis importados estão no catálogo da publicação provisória. A persistência em lote pelo script `persist-catalog.mjs` ainda depende da chave privada de servidor; a estrutura e a função de importação foram aplicadas somente a `zinayjqfgvywlmybhvvy`.
 - O DNS do domínio próprio não foi alterado. A associação não verificada ao projeto provisório foi removida e deve permanecer ausente até validar acesso, banco e publicação no ambiente correto. A versão ativa de `vilavix.com` continua sendo a anterior.
 
