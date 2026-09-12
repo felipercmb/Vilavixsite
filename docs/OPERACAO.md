@@ -42,7 +42,7 @@ Para uma nova instalação:
 6. Executar `node --env-file=.env.production scripts/persist-catalog.mjs` em ambiente seguro.
 7. Entrar como administrador, sincronizar Zernio, selecionar os corretores por campanha e habilitar a distribuição desejada.
 
-No Supabase Auth, adicione a URL do site terminada em `/redefinir-senha` às URLs de redirecionamento autorizadas. O fluxo de recuperação envia o e-mail e oferece a tela para escolher e confirmar a nova senha.
+No Supabase Auth, o Site URL está configurado como `https://vilavix-imoveis.vercel.app` e o retorno exato `https://vilavix-imoveis.vercel.app/redefinir-senha` foi salvo na lista autorizada em 12/09/2026. Para novas instalações, configure o endereço correspondente. O fluxo de recuperação oferece a tela para escolher e confirmar a nova senha; nenhum e-mail foi enviado durante a publicação.
 
 A importação para o banco preserva o status de imóveis já cadastrados (por exemplo, vendido ou reservado). Metadados de campanhas são atualizados apenas pelo servidor; os usuários não podem falsificar o estado ativo da Meta editando uma regra.
 
