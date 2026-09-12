@@ -7,6 +7,12 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$
 $$;
 REVOKE ALL ON FUNCTION public.is_crm_admin() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.is_crm_admin() TO authenticated;
+CREATE OR REPLACE FUNCTION public.is_crm_member() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$
+ SELECT EXISTS(SELECT 1 FROM public.profiles WHERE id=auth.uid() AND ativo=true);
+$$;
+REVOKE ALL ON FUNCTION public.is_crm_member() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_crm_member() TO authenticated;
 
 CREATE TABLE IF NOT EXISTS public.campaigns (
  id text PRIMARY KEY, external_id text NOT NULL, name text NOT NULL,
@@ -37,7 +43,7 @@ ALTER TABLE public.lead_assignments ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Campaign read" ON public.campaigns;
 CREATE POLICY "Campaign read" ON public.campaigns FOR SELECT TO authenticated USING(public.is_crm_admin());
 DROP POLICY IF EXISTS "Assignment read" ON public.lead_assignments;
-CREATE POLICY "Assignment read" ON public.lead_assignments FOR SELECT TO authenticated USING(public.is_crm_admin() OR broker_id=auth.uid());
+CREATE POLICY "Assignment read" ON public.lead_assignments FOR SELECT TO authenticated USING(public.is_crm_member() AND (public.is_crm_admin() OR broker_id=auth.uid()));
 -- Metadata writes are server-only. Rule writes and routing go through guarded RPCs.
 REVOKE INSERT,UPDATE,DELETE ON public.campaigns,public.lead_assignments FROM authenticated,anon;
 GRANT SELECT ON public.campaigns,public.lead_assignments TO authenticated;
@@ -155,11 +161,11 @@ GRANT EXECUTE ON FUNCTION public.preview_campaign_routing(text) TO authenticated
 -- Prevent self-promotion via editable user metadata or the legacy broad profile policy.
 CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 BEGIN
- INSERT INTO public.profiles(id,nome,email,foto,role)VALUES(NEW.id,COALESCE(NEW.raw_user_meta_data->>'nome',split_part(NEW.email,'@',1)),NEW.email,UPPER(LEFT(COALESCE(NEW.raw_user_meta_data->>'nome',NEW.email),2)),'corretor');RETURN NEW;
+ INSERT INTO public.profiles(id,nome,email,foto,role,ativo)VALUES(NEW.id,COALESCE(NEW.raw_user_meta_data->>'nome',split_part(NEW.email,'@',1)),NEW.email,UPPER(LEFT(COALESCE(NEW.raw_user_meta_data->>'nome',NEW.email),2)),'corretor',false);RETURN NEW;
 END;$$;
 DROP POLICY IF EXISTS "Profiles logado" ON public.profiles;
 DROP POLICY IF EXISTS "Profiles leitura CRM" ON public.profiles;
-CREATE POLICY "Profiles leitura CRM" ON public.profiles FOR SELECT TO authenticated USING(true);
+CREATE POLICY "Profiles leitura CRM" ON public.profiles FOR SELECT TO authenticated USING(id=auth.uid() OR public.is_crm_member());
 DROP POLICY IF EXISTS "Profiles administracao" ON public.profiles;
 CREATE POLICY "Profiles administracao" ON public.profiles FOR UPDATE TO authenticated USING(public.is_crm_admin()) WITH CHECK(public.is_crm_admin());
 COMMIT;

@@ -250,10 +250,12 @@ function LeadDetail({ lead, comments, tasks, corretoresList, onClose, onEdit, on
   return <Dialog title={lead.nome} subtitle={`${lead.origem || "Origem não informada"} · Cadastro em ${date(lead.data)}`} onClose={onClose} wide>
     <div className="crm-dialog-body">
       <Alert>{error}</Alert>
+      {lead.routingStatus === "pending" && !lead.corretor && !lead.corretorId && <p className="crm-next-task missing" role="status"><strong>Aguardando distribuição.</strong> {lead.routingReason || "Revise a campanha e os participantes na roleta."}</p>}
       <div className="crm-actions"><Badge status={lead.status} /><span style={{ flex: 1 }} />{link && <a className="crm-btn" href={link} target="_blank" rel="noreferrer"><MessageCircle size={14} />WhatsApp</a>}{lead.telefone && <a className="crm-btn" href={`tel:${lead.telefone.replace(/\D/g, "")}`}><Phone size={14} />Ligar</a>}<button className="crm-btn" onClick={onEdit}><Pencil size={14} />Editar contato</button></div>
       <dl className="crm-details">
         <div><dt>Telefone</dt><dd>{lead.telefone || "Não informado"}</dd></div><div><dt>E-mail</dt><dd>{lead.email ? <a href={`mailto:${lead.email}`}>{lead.email}</a> : "Não informado"}</dd></div>
         <div><dt>Interesse</dt><dd>{lead.interesse || "Não informado"}{lead.imovelRef && ` · Ref. ${lead.imovelRef}`}</dd></div><div><dt>Orçamento informado</dt><dd>{lead.orcamento || "Não informado"}</dd></div>
+        {(lead.campanha || lead.routingCampaignReference) && <div><dt>Campanha de origem</dt><dd>{lead.campanha || lead.routingCampaignReference}</dd></div>}
       </dl>
       <div className="crm-form-grid">
         <Field label="Etapa"><select value={lead.status} disabled={busy} onChange={(e) => run(() => updateLead(lead.id, { status: e.target.value }))}>{STAGES.map((s) => <option key={s} value={s}>{LABELS[s]}</option>)}</select></Field>

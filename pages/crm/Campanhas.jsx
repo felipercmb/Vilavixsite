@@ -444,7 +444,7 @@ export default function Campanhas({
         });
       }
       setNotice(
-        `Lead atribuído a ${assignment.broker_name || "corretor elegível"}${demo ? " na revisão local" : ""}.`,
+        `Lead atribuído a ${assignment.broker_name || "corretor elegível"}${demo ? " na revisão local" : ""}. Avise o corretor pelo WhatsApp; a distribuição manual não envia uma nova notificação.`,
       );
       setSelectedLead("");
       setPreview(null);

@@ -32,6 +32,11 @@ async function setup() {
     "broker@local.test",
     '{"nome":"Broker"}',
   ]);
+  // These scenarios model approved CRM members. Registration intentionally
+  // leaves every new profile inactive until it is explicitly authorized.
+  await db.query("UPDATE profiles SET ativo=true WHERE id=ANY($1::uuid[])", [
+    [admin, broker],
+  ]);
   await db.query("UPDATE profiles SET role='admin' WHERE id=$1", [admin]);
   await db.query("SELECT set_config('test.uid',$1,false)", [admin]);
   const campaigns = ["selected", "other", "historical"].map((id) => ({

@@ -1,0 +1,6 @@
+project_id = "vilavix-crm"
+
+[functions.sync-zernio-campaigns]
+# This endpoint accepts only the dedicated X-Campaign-Sync-Key, verified in its
+# handler. Disabling the gateway's user-JWT check does not make the function public.
+verify_jwt = false

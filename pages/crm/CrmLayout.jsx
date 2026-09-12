@@ -479,7 +479,11 @@ export default function CrmLayout({
     );
   };
   const addTask = async (task) => {
-    const next = { ...task, concluida: false };
+    const lead = leads.find((item) => String(item.id) === String(task.leadId));
+    const corretor = currentProfile?.role === "admin"
+      ? task.corretor || lead?.corretor || currentProfile?.nome
+      : currentProfile?.nome;
+    const next = { ...task, corretor, concluida: false };
     const data = await persist(() =>
       demo
         ? { data: { ...next, id: localId() } }
