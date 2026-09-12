@@ -4,9 +4,13 @@ A carteira administrativa é separada do catálogo público. Proprietários, con
 
 ## Publicação e liberação
 
-Publicado em 12/09/2026: https://vilavix-imoveis.vercel.app. A migração foi aplicada ao projeto `zinayjqfgvywlmybhvvy`; as nove tabelas têm RLS ativo e o bucket de documentos é privado. A lista de membros permanece vazia até confirmar as três contas solicitadas. A rota publicada `/crm/alugueis?demo=true` foi verificada e exige login.
+Publicação provisória em 12/09/2026: https://vilavix-imoveis.vercel.app. Somente nesse ambiente, conectado ao projeto `zinayjqfgvywlmybhvvy`, a migração foi aplicada e as nove tabelas foram verificadas com RLS ativo e bucket de documentos privado. A lista de membros permanece vazia. A rota `/crm/alugueis?demo=true` dessa publicação foi verificada e exige login.
 
-1. Aplicar o esquema base do CRM e as migrações existentes, na ordem indicada pelos nomes. Aplicar `supabase/migrations/20260912190000_rental_management.sql` por último. A migração é repetível e não semeia contratos, valores ou permissões reais.
+O destino solicitado, https://vilavix.com, ainda usa outra versão e o projeto Supabase `xrbegboejhaumwbtpuej`, identificado no bundle ativo `assets/index-BOGP8JQA.js`. A sessão administrativa disponível não abre esse banco, e a conta Vercel atual não tem acesso confirmado ao domínio. A associação tentada ao projeto provisório não foi verificada e foi removida, preservando o DNS, o projeto original e a versão ativa. A carteira, as migrações e as permissões **não foram aplicadas nem verificadas no banco da produção real**.
+
+Antes de alterar `vilavix.com`, obter acesso às contas corretas e conferir o esquema e os usuários de `xrbegboejhaumwbtpuej`. Preservar o banco e a versão ativa até essa verificação; não usar os UUIDs do ambiente provisório como se pertencessem à produção.
+
+1. Após confirmar o projeto de destino e a compatibilidade com seu esquema existente, aplicar as migrações necessárias na ordem indicada pelos nomes, com `supabase/migrations/20260912190000_rental_management.sql` por último. Não substituir o esquema de um banco em uso pelo esquema base sem revisão. A migração é repetível e não semeia contratos, valores ou permissões reais.
 2. Confirmar os **e-mails de login exatos** do Weder, Wellington e Felipe com o responsável. Localizar cada UUID no projeto correto e conferir que o perfil pertence à pessoa desejada. Não procurar nomes aproximados nem conceder acesso a todos os administradores.
 3. O SQL editor autenticado do projeto ou uma operação protegida de servidor pode inserir os UUIDs aprovados em `public.rental_members`. A aplicação cliente não tem permissão de inclusão, alteração ou exclusão nesta tabela. Não colocar uma chave `service_role` no navegador ou em variável `VITE_*`.
 
@@ -53,7 +57,7 @@ Recebimentos, repasses e auditoria são imutáveis, inclusive por atualização 
 
 ## Demonstração local
 
-`createRentalRepository({demo: true, userId})` só funciona em desenvolvimento. Dados iniciais são identificados como fictícios e ficam no armazenamento deste navegador, separados por usuário. Documentos de teste também ficam locais. A versão publicada recusa essa opção; nunca substitui falha de acesso ou de conexão por dados de demonstração.
+`createRentalRepository({demo: true, userId})` só funciona em desenvolvimento. Dados iniciais são identificados como fictícios e ficam no armazenamento deste navegador, separados por usuário. Documentos de teste também ficam locais. A publicação provisória deste repositório recusa essa opção; nunca substitui falha de acesso ou de conexão por dados de demonstração. Isso não constitui verificação do código anterior ainda ativo em `vilavix.com`.
 
 ## Verificação
 

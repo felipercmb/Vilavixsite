@@ -2,7 +2,9 @@
 
 Site imobiliário e CRM com catálogo real da VilaVix, atendimento comercial e distribuição de leads por campanha Meta Ads consultada pela Zernio.
 
-Publicado em [vilavix-imoveis.vercel.app](https://vilavix-imoveis.vercel.app).
+Publicação provisória para revisão: [vilavix-imoveis.vercel.app](https://vilavix-imoveis.vercel.app). O destino solicitado é [vilavix.com](https://vilavix.com), cuja versão ativa ainda não foi substituída por este projeto.
+
+Em 12/09/2026, o site ativo em `vilavix.com` foi identificado usando o Supabase `xrbegboejhaumwbtpuej`. Este repositório e a publicação provisória estão configurados com outro projeto, `zinayjqfgvywlmybhvvy`. É necessário acessar as contas corretas da Vercel e do Supabase e verificar a compatibilidade do banco em uso antes de alterar a produção real.
 
 ## Começar
 
@@ -36,4 +38,4 @@ npm run catalog:import
 
 Consulte [Operação](docs/OPERACAO.md) para configurar o banco, autenticação, campanhas e ambiente de produção. Consulte [Importação do catálogo](docs/catalog-import.md) para metodologia, fontes e execução da coleta.
 
-As quatro migrações foram aplicadas ao Supabase em 12/09/2026. Consulte as pendências de ativação em [Operação](docs/OPERACAO.md), especialmente as contas autorizadas para [gestão de aluguéis](docs/rental-management.md) e a chave de servidor da sincronização de campanhas. A recepção automática de formulários Meta por webhook ainda precisa de uma integração de entrada; a roleta atual atende leads cadastrados no CRM com campanha selecionada.
+As quatro migrações foram aplicadas somente ao projeto Supabase da publicação provisória, `zinayjqfgvywlmybhvvy`, em 12/09/2026. Não foram aplicadas nem verificadas no banco `xrbegboejhaumwbtpuej` usado por `vilavix.com`. Consulte as pendências em [Operação](docs/OPERACAO.md), incluindo a identificação das contas corretas, os usuários autorizados para [gestão de aluguéis](docs/rental-management.md) e a chave de servidor da sincronização de campanhas. A recepção automática de formulários Meta por webhook ainda precisa de uma integração de entrada; a roleta atual atende leads cadastrados no CRM com campanha selecionada.
