@@ -2,9 +2,9 @@
 
 Site imobiliário e CRM com catálogo real da VilaVix, atendimento comercial e distribuição de leads por campanha Meta Ads consultada pela Zernio.
 
-Publicação provisória para revisão: [vilavix-imoveis.vercel.app](https://vilavix-imoveis.vercel.app). O destino solicitado é [vilavix.com](https://vilavix.com), cuja versão ativa ainda não foi substituída por este projeto.
+Produção: [vilavix.com](https://vilavix.com), na equipe Vercel **VilaVix**, projeto **vilavixsite**, conectado ao Supabase `xrbegboejhaumwbtpuej`.
 
-Em 12/09/2026, o acesso ao Supabase da produção real, `xrbegboejhaumwbtpuej`, foi confirmado na organização correta, com conferência do esquema e dos usuários pelo painel autenticado. Este repositório e a publicação provisória estão configurados com outro projeto, `zinayjqfgvywlmybhvvy`. O acesso à Vercel foi confirmado na equipe **VilaVix**, projeto **vilavixsite**, e o vínculo local de publicação já aponta para esse destino. A aplicação das migrações no banco real, a liberação dos três usuários da carteira privada, a configuração das credenciais de conexão e a publicação em `vilavix.com` permanecem pendentes.
+O banco real recebeu as seis migrações, 599 imóveis e acesso à carteira privada somente para Weder, Wellington e Felipe. As campanhas são atualizadas automaticamente pela Zernio a cada dez minutos, com descoberta dos identificadores que a listagem geral pode omitir. A publicação foi verificada em 12/09/2026 (horário de São Paulo).
 
 ## Começar
 
@@ -40,4 +40,4 @@ npm run catalog:import
 
 Consulte [Operação](docs/OPERACAO.md) para configurar o banco, autenticação, campanhas e ambiente de produção. Consulte [Importação do catálogo](docs/catalog-import.md) para metodologia, fontes e execução da coleta.
 
-As quatro migrações foram aplicadas somente ao projeto Supabase da publicação provisória, `zinayjqfgvywlmybhvvy`, em 12/09/2026. Ainda não foram aplicadas ao banco `xrbegboejhaumwbtpuej` usado por `vilavix.com`. As contas de Felipe, Weder e Wellington foram conferidas no banco real, mas o acesso à [gestão de aluguéis](docs/rental-management.md) ainda não foi concedido. A produção já recebe leads pelas funções `lead-webhook`, `meta-webhook` e `zernio-lead`, com distribuição e notificação existentes. A integração dessas entradas com as novas regras de campanha está em preparação e ainda precisa ser aplicada e validada. Consulte as pendências em [Operação](docs/OPERACAO.md).
+A produção preserva os fluxos existentes de leads e notificações. Três campanhas ativas foram configuradas com seus participantes anteriores; campanhas não configuradas mantêm a distribuição existente. Consulte [Entrada de leads](docs/ENTRADA-DE-LEADS.md), [Sincronização](docs/SINCRONIZACAO-DE-CAMPANHAS.md) e [Gestão de aluguéis](docs/rental-management.md).

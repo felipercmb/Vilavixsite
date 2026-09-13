@@ -4,13 +4,13 @@ A carteira administrativa é separada do catálogo público. Proprietários, con
 
 ## Publicação e liberação
 
-Publicação provisória em 12/09/2026: https://vilavix-imoveis.vercel.app. Somente nesse ambiente, conectado ao projeto `zinayjqfgvywlmybhvvy`, a migração foi aplicada e as nove tabelas foram verificadas com RLS ativo e bucket de documentos privado. A lista de membros permanece vazia. A rota `/crm/alugueis?demo=true` dessa publicação foi verificada e exige login.
+A carteira foi publicada em https://vilavix.com no projeto Vercel `vila-vix/vilavixsite`, usando o Supabase `xrbegboejhaumwbtpuej`. A migração e as permissões estão aplicadas no banco real.
 
-O destino solicitado, https://vilavix.com, ainda usa outra versão e o projeto Supabase `xrbegboejhaumwbtpuej`. O acesso a esse banco foi confirmado na organização correta pelo painel autenticado. O acesso Vercel também está confirmado na equipe VilaVix, projeto `vilavixsite`, e o vínculo local de publicação aponta para esse projeto. Nenhum novo deploy foi feito nele. A associação tentada ao projeto provisório foi removida, preservando o DNS, o projeto original e a versão ativa. A carteira, as migrações e as permissões **ainda não foram aplicadas no banco da produção real**.
+Somente **Weder, Wellington e Felipe** estão habilitados. As três contas foram conferidas entre perfil e usuário autenticável, com perfis ativos. E-mails e UUIDs permanecem apenas no material local protegido. A validação confirmou acesso dos três, negação para outro corretor e visitantes, nove tabelas protegidas e bucket privado. A carteira começa sem contratos ou lançamentos financeiros artificiais.
 
-As contas solicitadas de Felipe, Weder e Wellington foram identificadas de forma única em `xrbegboejhaumwbtpuej`, com correspondência entre perfil e usuário autenticável e perfis ativos. A identidade está conferida; **a liberação dos três acessos permanece pendente**. Os e-mails e UUIDs exatos ficam somente no material local de provisionamento, fora do repositório público. Antes de atualizar `vilavix.com`, concluir os testes de compatibilidade e aplicar as migrações preservando o esquema e os dados existentes. Não usar UUIDs do ambiente provisório para conceder acesso na produção.
+Para novas instalações ou liberações futuras:
 
-1. Após confirmar o projeto de destino e a compatibilidade com seu esquema existente, aplicar as migrações necessárias na ordem indicada pelos nomes, com `supabase/migrations/20260912190000_rental_management.sql` por último. Não substituir o esquema de um banco em uso pelo esquema base sem revisão. A migração é repetível e não semeia contratos, valores ou permissões reais.
+1. Após confirmar o projeto de destino e a compatibilidade com seu esquema existente, aplicar as migrações necessárias na ordem indicada pelos nomes, incluindo `supabase/migrations/20260912190000_rental_management.sql` após as migrações de catálogo, campanhas e acesso. Não substituir o esquema de um banco em uso pelo esquema base sem revisão. A migração é repetível e não semeia contratos, valores ou permissões reais.
 2. Usar exclusivamente os UUIDs das três contas já conferidas no banco real, registrados no material local protegido. A conferência incluiu os e-mails de login exatos e os perfis ativos. Não conceder acesso por semelhança de nome nem a todos os administradores. Para futuras liberações, conferir a identidade exata antes de provisionar.
 3. O SQL editor autenticado do projeto ou uma operação protegida de servidor pode inserir os UUIDs aprovados em `public.rental_members`. A aplicação cliente não tem permissão de inclusão, alteração ou exclusão nesta tabela. Não colocar uma chave `service_role` no navegador ou em variável `VITE_*`.
 
@@ -29,7 +29,7 @@ UPDATE public.rental_members SET enabled = false
 WHERE profile_id = 'UUID_EXATO_JA_CONFERIDO'::uuid;
 ```
 
-A lista começa vazia: sem UUIDs explicitamente aprovados, nenhum usuário real entra. `has_rental_access()` é usado para a navegação; todas as tabelas, operações de escrita e o armazenamento verificam a mesma permissão novamente. Mudanças na própria lista também ficam na auditoria.
+Em uma instalação nova, a lista começa vazia: sem UUIDs explicitamente aprovados, nenhum usuário real entra. `has_rental_access()` é usado para a navegação; todas as tabelas, operações de escrita e o armazenamento verificam a mesma permissão novamente. Mudanças na própria lista também ficam na auditoria.
 
 ## Registros e fluxo
 

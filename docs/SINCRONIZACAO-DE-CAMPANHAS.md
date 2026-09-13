@@ -1,6 +1,6 @@
 # Sincronização automática das campanhas
 
-O código está preparado para sincronizar as campanhas a cada dez minutos pelo Supabase Cron. A função, os segredos e o agendamento ainda precisam ser instalados no projeto real. Nenhum agendamento de produção é criado ao aplicar as migrações da aplicação.
+A função, os segredos, o Vault e o job `vilavix-zernio-campaign-sync` estão instalados no projeto real `xrbegboejhaumwbtpuej`, com atualização a cada dez minutos. A chamada autenticada da versão corrigida e a execução automática de 12/09/2026 às 22:30 (São Paulo) retornaram HTTP 200, 45 campanhas e três ativas. O agendamento é instalado separadamente das migrações da aplicação.
 
 ## Por que uma função separada
 
@@ -8,13 +8,13 @@ A roleta exige campanhas sincronizadas nos últimos 30 minutos. Uma rotina indep
 
 A Edge Function `sync-zernio-campaigns` usa a mesma implementação da Zernio que `/api/campaigns`: `supabase/functions/_shared/zernio.js`. `server/zernio.js` apenas reexporta esse módulo. Todas as importações da Edge Function são relativas e ficam dentro de `supabase/functions`; não há dependência remota durante sua preparação.
 
-Ela consulta todas as páginas, confirma na origem as campanhas apontadas como ativas e só então faz uma única chamada ao RPC `sync_zernio_campaigns`. Essa chamada atualiza metadados em transação e preserva participantes, pesos, limites e habilitação da distribuição. A função não ativa anúncios, não distribui pendências e não envia mensagens.
+Ela consulta todas as páginas e também recupera os IDs dos últimos 90 dias de entrada e das campanhas já ativas/habilitadas pelo RPC `discover_zernio_campaign_ids`, exclusivo do servidor. Consulta cada ID conhecido diretamente na Zernio, valida a conta e o estado atual e só então faz uma única chamada ao RPC `sync_zernio_campaigns`. Essa chamada atualiza metadados em transação e preserva participantes, pesos, limites, habilitação e `routing_configured`. A função não ativa anúncios, não distribui pendências e não envia mensagens.
 
 Falhas de consulta não gravam uma lista parcial nem renovam a data de sincronização. Dados que completarem 30 minutos sem atualização deixam de autorizar a distribuição. Se a resposta da gravação no banco for interrompida, o resultado fica sem confirmação; consulte a última atualização no banco antes de concluir se a transação foi aplicada. O limite de execução da função é de 90 segundos; cada consulta ao provedor também mantém seu limite próprio.
 
 ## Segredos e publicação
 
-1. Confirme o projeto de produção e aplique a migração de campanhas antes de instalar a rotina.
+1. Confirme o projeto de produção e aplique as migrações de campanhas e `20260912195000_campaign_discovery.sql` antes de instalar a rotina.
 2. Gere uma chave aleatória dedicada com pelo menos 256 bits. Configure-a como `CAMPAIGN_SYNC_CRON_KEY` nas Edge Functions e salve o mesmo valor no Supabase Vault com um nome exclusivo, como `campaign_sync_cron_key`. Use os formulários de segredos ou um arquivo privado fora do repositório. Não coloque o valor em código, histórico de comandos, SQL salvo ou documentos.
 3. Configure no ambiente da Edge Function `ZERNIO_API_KEY`, `ZERNIO_ACCOUNT_ID` e `ZERNIO_AD_ACCOUNT_ID` da conta verificada. Esses valores não são herdados automaticamente da Vercel. `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` são fornecidos pelo ambiente das Edge Functions.
 4. Publique apenas `sync-zernio-campaigns`, fornecendo o identificador verificado do projeto ao comando de publicação. `supabase/config.toml` configura `verify_jwt=false` somente para essa função. Ela exige `X-Campaign-Sync-Key`, compara hashes em um percurso fixo e rejeita chamadas sem a chave dedicada. Tokens anon, JWTs de usuários e o cabeçalho de autorização service role não autenticam essa função.
@@ -41,7 +41,7 @@ Confirme o retorno HTTP 200 da Edge Function e o avanço de `campaigns.synced_at
 
 ## Validação local
 
-Os testes usam respostas simuladas e um banco local. Cobrem autenticação, paginação, confirmação de campanhas ativas, ausência de gravação parcial, tempo limite, mensagens sem segredos, chamadas simultâneas e as restrições do instalador. A entrada TypeScript também passa na checagem do Deno sem acesso remoto. A instalação real de Cron/pg_net/Vault e a chamada da função publicada permanecem etapas de verificação de produção.
+Os testes usam respostas simuladas e um banco local. Cobrem autenticação, paginação, confirmação de campanhas ativas, ausência de gravação parcial, tempo limite, mensagens sem segredos, chamadas simultâneas e as restrições do instalador. A entrada TypeScript também passa na checagem do Deno sem acesso remoto. Cron/pg_net/Vault foram instalados e a chamada autenticada publicada foi validada no banco real. Confirmar novamente a execução agendada após futuras alterações.
 
 ## Fontes
 
