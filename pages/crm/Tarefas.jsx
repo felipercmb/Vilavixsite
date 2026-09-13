@@ -190,7 +190,11 @@ export default function Tarefas({ tasks, leads, addTask, updateTask, deleteTask,
   const [preferences] = useState(() => readAgendaFilters(filterKey));
   const [q, setQ] = useState(preferences.q || ""), [tab, setTab] = useState(preferences.tab || "pending"), [type, setType] = useState(preferences.type || ""), [selectedDate, setSelectedDate] = useState(preferences.selectedDate || "");
   const [editing, setEditing] = useState(null), [creating, setCreating] = useState(false), [draft, setDraft] = useState(null), [deleting, setDeleting] = useState(null), [busy, setBusy] = useState(null), [error, setError] = useState(""), [message, setMessage] = useState("");
+  const [page, setPage] = useState(1);
+  const perPage = 60;
+  const leadById = useMemo(() => new Map(leads.map(lead => [String(lead.id), lead])), [leads]);
   const day = today();
+  useEffect(() => setPage(1), [q, tab, type, selectedDate, portfolioScope]);
   useEffect(() => { try { sessionStorage.setItem(filterKey, JSON.stringify({ q, tab, type, selectedDate })); } catch {} }, [filterKey, q, tab, type, selectedDate]);
   useEffect(() => {
     if (!taskDraft) return;
@@ -207,8 +211,11 @@ export default function Tarefas({ tasks, leads, addTask, updateTask, deleteTask,
   useEffect(() => { if (!agendaFilter) return; setTab(agendaFilter); setQ(""); setType(""); setSelectedDate(""); setAgendaFilter?.(null); }, [agendaFilter, setAgendaFilter]);
   const scopedIds = new Set(filterPortfolio(leads, portfolioScope, currentProfile).map((l) => String(l.id)));
   const base = tasks.filter((t) => (!visitsOnly || t.tipo === "visita") && (portfolioScope === "all" || !t.leadId || scopedIds.has(String(t.leadId))));
-  const filtered = useMemo(() => base.filter((t) => matches([t.titulo, t.descricao, leads.find((l) => String(l.id) === String(t.leadId))?.nome].join(" "), q) && (!type || t.tipo === type) && (!selectedDate || t.data === selectedDate) && (tab === "all" || (tab === "done" ? t.concluida : !t.concluida && (tab === "today" ? t.data === day : tab === "overdue" ? t.data && t.data < day : true)))), [base, q, type, selectedDate, tab, leads, day]);
-  const groups = groupTasksByDay(filtered);
+  const filtered = useMemo(() => base.filter((t) => matches([t.titulo, t.descricao, leadById.get(String(t.leadId))?.nome].join(" "), q) && (!type || t.tipo === type) && (!selectedDate || t.data === selectedDate) && (tab === "all" || (tab === "done" ? t.concluida : !t.concluida && (tab === "today" ? t.data === day : tab === "overdue" ? t.data && t.data < day : true)))), [base, q, type, selectedDate, tab, leads, day]);
+  const ordered = useMemo(() => [...filtered].sort((a, b) => `${a.data || "9999"} ${a.hora || "23:59"}`.localeCompare(`${b.data || "9999"} ${b.hora || "23:59"}`)), [filtered]);
+  const totalPages = Math.max(1, Math.ceil(ordered.length / perPage));
+  const currentPage = Math.min(page, totalPages);
+  const groups = groupTasksByDay(ordered.slice((currentPage - 1) * perPage, currentPage * perPage));
   const run = async (id, fn) => { setBusy(id); setError(""); setMessage(""); try { await fn(); } catch (err) { setError(err.message); } finally { setBusy(null); } };
   const closeForm = () => { setCreating(false); setEditing(null); setDraft(null); };
   return <>
@@ -227,7 +234,7 @@ export default function Tarefas({ tasks, leads, addTask, updateTask, deleteTask,
     </div>
     {groups.length ? <div className="crm-agenda-days">{groups.map((group) => <section key={group.day} className={`crm-agenda-day ${group.day && group.day < day ? "overdue" : ""}`}>
       <header className="crm-agenda-day-heading"><CalendarDays size={16} /><h2>{group.day === day ? "Hoje" : group.day ? new Date(`${group.day}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }) : "Sem data"}</h2><span>{group.tasks.length} atividade{group.tasks.length !== 1 ? "s" : ""}</span>{group.day && group.day < day && group.tasks.some((t) => !t.concluida) && <Badge status="alta">Em atraso</Badge>}</header>
-      {group.tasks.map((t) => { const lead = leads.find((l) => String(l.id) === String(t.leadId)); const targetDate = postponeTaskDate(t.data, 1, day); return <article key={t.id} className={`crm-agenda-item ${t.concluida ? "done" : ""}`}>
+      {group.tasks.map((t) => { const lead = leadById.get(String(t.leadId)); const targetDate = postponeTaskDate(t.data, 1, day); return <article key={t.id} className={`crm-agenda-item ${t.concluida ? "done" : ""}`}>
         <button className={`crm-task-check ${t.concluida ? "checked" : ""}`} aria-label={`${t.concluida ? "Reabrir" : "Concluir"} ${t.titulo}`} disabled={busy === t.id} onClick={() => run(t.id, async () => { await toggleTask(t.id); setMessage(t.concluida ? "Atividade reaberta." : "Atividade concluída."); })}>{t.concluida && <Check size={13} />}</button>
         <time className="crm-agenda-time">{t.hora?.slice(0, 5) || "—"}</time>
         <div className="crm-agenda-copy"><button className="crm-link" onClick={() => setEditing(t)}>{t.titulo}</button><small><span>{TYPES[t.tipo] || t.tipo}</span>{lead ? <button className="crm-link" onClick={() => goToLead(lead.id)}>{lead.nome}</button> : <span>Atividade da equipe</span>}{t.prioridade === "alta" && <span>Prioridade alta</span>}</small>{t.descricao && <p>{t.descricao}</p>}</div>
@@ -238,6 +245,7 @@ export default function Tarefas({ tasks, leads, addTask, updateTask, deleteTask,
         </div>
       </article>; })}
     </section>)}</div> : <section className="crm-card"><Empty title="Nenhuma atividade nesta seleção" text="Ajuste os filtros ou agende uma atividade."><button className="crm-btn" onClick={() => setCreating(true)}>{visitsOnly ? "Agendar visita" : "Criar atividade"}</button></Empty></section>}
+    {filtered.length > perPage && <div className="crm-pagination"><span>{(currentPage - 1) * perPage + 1}–{Math.min(currentPage * perPage, filtered.length)} de {filtered.length} atividades</span><div className="crm-actions"><button className="crm-btn crm-btn-small" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Anterior</button><span>{currentPage} de {totalPages}</span><button className="crm-btn crm-btn-small" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>Próxima</button></div></div>}
     {(creating || editing) && <TaskForm task={editing} draft={draft} leads={leads} visitsOnly={visitsOnly} onClose={closeForm} onSave={(t) => editing ? updateTask(editing.id, t) : addTask(t)} />}
     {deleting && <Dialog title="Excluir atividade?" subtitle={deleting.titulo} onClose={() => setDeleting(null)}><div className="crm-dialog-body"><p className="crm-text-muted">A atividade será removida da agenda.</p><Alert>{error}</Alert></div><footer className="crm-dialog-footer"><button className="crm-btn" onClick={() => setDeleting(null)}>Cancelar</button><button className="crm-btn crm-btn-danger" disabled={busy === deleting.id} onClick={() => run(deleting.id, async () => { await deleteTask(deleting.id); setDeleting(null); })}>Excluir atividade</button></footer></Dialog>}
   </>;

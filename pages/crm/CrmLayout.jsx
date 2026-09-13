@@ -1,27 +1,27 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import Logo from "../../components/Logo.jsx";
-import Dashboard from "./Dashboard.jsx";
-import Leads from "./Leads.jsx";
-import Pipeline from "./Pipeline.jsx";
-import Tarefas from "./Tarefas.jsx";
-import ImoveisCRM from "./ImoveisCRM.jsx";
-import Corretores from "./Corretores.jsx";
-import AddImovel from "./AddImovel.jsx";
-import Campanhas from "./Campanhas.jsx";
-import AlugueisCRM from "./AlugueisCRM.jsx";
+const Dashboard = lazy(() => import("./Dashboard.jsx"));
+const Leads = lazy(() => import("./Leads.jsx"));
+const Pipeline = lazy(() => import("./Pipeline.jsx"));
+const Tarefas = lazy(() => import("./Tarefas.jsx"));
+const ImoveisCRM = lazy(() => import("./ImoveisCRM.jsx"));
+const Corretores = lazy(() => import("./Corretores.jsx"));
+const AddImovel = lazy(() => import("./AddImovel.jsx"));
+const Campanhas = lazy(() => import("./Campanhas.jsx"));
+const AlugueisCRM = lazy(() => import("./AlugueisCRM.jsx"));
 import { createRentalRepository } from "../../lib/rentals.js";
 import * as db from "../../lib/db.js";
 import { filterPortfolio } from "../../lib/broker-workflow.js";
-import {
-  catalogSnapshot,
-  normalizeProperty,
-  invalidateCatalog,
-} from "../../lib/catalog.js";
+import { normalizeProperty } from "../../lib/property.js";
+import { createCrmResourceLoader, crmResourcePlan, CRM_RESOURCE_LABELS } from "../../lib/crm-resources.js";
+import { createCrmTaskCache } from "../../lib/crm-task-cache.js";
+const invalidateCatalog = () => { void import("../../lib/catalog.js").then(module => module.invalidateCatalog()); };
 import {
   dbToLead,
   leadToDb,
   dbToTask,
   taskToDb,
+  taskChangesToDb,
   dbToComments,
   commentToDb,
   dbToCorretor,
@@ -48,7 +48,7 @@ const MENU_GROUPS = [
   { label: "Atendimento", items: [
     { id: "dashboard", label: "Meu dia", Icon: LayoutDashboard },
     { id: "leads", label: "Contatos", Icon: Users },
-    { id: "pipeline", label: "Negociações", Icon: Kanban },
+    { id: "funil", label: "Funil completo", Icon: Kanban },
     { id: "tarefas", label: "Agenda e retornos", Icon: CheckSquare },
     { id: "visitas", label: "Visitas", Icon: CalendarDays },
   ] },
@@ -266,17 +266,15 @@ export default function CrmLayout({
 }) {
   const [leads, setLeads] = useState([]),
     [tasks, setTasks] = useState([]),
+    [visitTasks, setVisitTasks] = useState([]),
     [comments, setComments] = useState({}),
-    [imoveis, setImoveis] = useState(
-      catalogSnapshot.map((p) => ({ ...p, _imported: true })),
-    ),
+    [imoveis, setImoveis] = useState([]),
     [corretoresList, setCorretoresList] = useState([]),
     [currentProfile, setCurrentProfile] = useState(null),
     [rentalAccess, setRentalAccess] = useState(false),
     [rentalAccessError, setRentalAccessError] = useState(""),
-    [loading, setLoading] = useState(true),
+    [resourceStatus, setResourceStatus] = useState({}),
     [loaded, setLoaded] = useState(false),
-    [loadErrors, setLoadErrors] = useState([]),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [focusLeadId, setFocusLeadId] = useState(null),
@@ -292,74 +290,88 @@ export default function CrmLayout({
     try { localStorage.setItem(`vilavix:portfolio:${demo ? "review" : user?.id}`, portfolioScope); }
     catch { /* Scope is a viewing preference, not business data. */ }
   }, [demo, user?.id, portfolioScope]);
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setLoadErrors([]);
+  const resourceLoader = useRef(null);
+  const taskCache = useRef(null);
+  if (!taskCache.current) taskCache.current = createCrmTaskCache();
+  const syncTaskState = (snapshot) => { setTasks(snapshot.tasks); setVisitTasks(snapshot.visits); };
+  const currentMenu = menu === "pipeline" ? "funil" : menu;
+  const plan = crmResourcePlan(currentMenu);
+  const profileReady = demo ? loaded : resourceStatus.profile?.state === "ready";
+  const resourceReady = (name) => demo ? loaded : resourceStatus[name]?.state === "ready";
+  const profileLoading = !demo && !["ready", "error"].includes(resourceStatus.profile?.state);
+  const requiredLoading = !demo && plan.required.some(name => !["ready", "error"].includes(resourceStatus[name]?.state));
+  const loading = demo ? !loaded : profileLoading || (resourceStatus.profile?.state !== "error" && requiredLoading);
+  const visibleResources = new Set(["profile", "rentalAccess", ...plan.required, ...plan.background]);
+  const loadErrors = Object.entries(resourceStatus).filter(([name, value]) => visibleResources.has(name) && value.state === "error")
+    .map(([name, value]) => `${CRM_RESOURCE_LABELS[name]}: ${value.error}`);
+  const requiredError = !demo && (resourceStatus.profile?.state === "error" || plan.required.some(name => resourceStatus[name]?.state === "error"));
+  useEffect(() => {
+    let live = true;
+    setLoaded(false);
+    setCurrentProfile(null);
     setRentalAccess(false);
     setRentalAccessError("");
+    setResourceStatus({});
+    taskCache.current.reset();
     if (demo) {
-      const data = readDemo();
-      setLeads(data.leads);
-      setTasks(data.tasks);
-      setComments(data.comments || {});
-      setCorretoresList(data.brokers);
-      const merged = new Map(
-        catalogSnapshot.map((p) => [String(p.id), { ...p, _imported: true }]),
-      );
-      (data.properties || []).forEach((p) => merged.set(String(p.id), p));
-      setImoveis([...merged.values()]);
-      setCurrentProfile({ id: "broker-demo-a", nome: "Corretor Exemplo A", role: "admin" });
-      setRentalAccess(import.meta.env.DEV);
-      setLoaded(true);
-      setLoading(false);
-      return;
+      void import("../../lib/catalog.js").then(({ catalogSnapshot }) => {
+        if (!live) return;
+        const data = readDemo();
+        setLeads(data.leads);
+        syncTaskState(taskCache.current.applyRead("tasks", data.tasks, taskCache.current.beginRead()));
+        setComments(data.comments || {}); setCorretoresList(data.brokers);
+        const merged = new Map(catalogSnapshot.map(p => [String(p.id), { ...p, _imported: true }]));
+        (data.properties || []).forEach(p => merged.set(String(p.id), p));
+        setImoveis([...merged.values()]);
+        setCurrentProfile({ id: "broker-demo-a", nome: "Corretor Exemplo A", role: "admin" });
+        setRentalAccess(import.meta.env.DEV); setLoaded(true);
+      }).catch(() => { if (live) setError("Não foi possível carregar a revisão local."); });
+      return () => { live = false; };
     }
-    const calls = [
-      ["Leads", db.getLeads],
-      ["Tarefas", db.getTasks],
-      ["Histórico", db.getComments],
-      ["Equipe", db.getProfiles],
-      ["Perfil", () => db.getProfile(user?.id)],
-      ["Imóveis", db.getImoveis],
-      ["Acesso à locação", async () => ({ data: await createRentalRepository({ userId: user?.id }).getAccess() })],
-    ];
-    const results = await Promise.allSettled(calls.map(async ([, fn]) => fn()));
-    const failures = [];
-    results.forEach((result, i) => {
-      const value =
-        result.status === "fulfilled" ? result.value : { error: result.reason };
-      if (value.error) {
-        if (i === 6) setRentalAccessError("Não foi possível verificar sua permissão de acesso à carteira de aluguel.");
-        failures.push(
-          `${calls[i][0]}: ${value.error.message || "Não foi possível carregar."}`,
-        );
-        return;
-      }
-      const data = value.data;
-      if (i === 0) setLeads((data || []).map(mapLead));
-      if (i === 1) setTasks((data || []).map(dbToTask));
-      if (i === 2) setComments(dbToComments(data || []));
-      if (i === 3) setCorretoresList((data || []).map(dbToCorretor));
-      if (i === 4) setCurrentProfile(data);
-      if (i === 6) setRentalAccess(data === true);
-      if (i === 5) {
-        const map = new Map(
-          catalogSnapshot.map((p) => [p.codigo, { ...p, _imported: true }]),
-        );
-        (data || []).forEach((row) => {
-          const p = normalizeProperty(row);
-          map.set(p.codigo, { ...p, _imported: false });
-        });
-        setImoveis([...map.values()]);
-      }
+    setLeads([]); setTasks([]); setVisitTasks([]); setComments({}); setImoveis([]); setCorretoresList([]);
+    const readTasks = async (kind, signal) => {
+      const token = taskCache.current.beginRead();
+      const result = await db.getTasks({ ...(kind === "visits" ? { tipo: "visita" } : {}), signal });
+      return { ...result, data: { token, rows: (result.data || []).map(dbToTask) } };
+    };
+    const loader = createCrmResourceLoader({
+      profile: () => db.getProfile(user?.id),
+      leads: db.getLeads,
+      tasks: signal => readTasks("tasks", signal),
+      visits: signal => readTasks("visits", signal),
+      comments: db.getComments,
+      profiles: db.getProfiles,
+      properties: db.getImoveis,
+      rentalAccess: async () => ({ data: await createRentalRepository({ userId: user?.id }).getAccess() }),
+    }, {
+      onStatus: (name, status) => {
+        setResourceStatus(previous => ({ ...previous, [name]: status }));
+        if (name === "rentalAccess") setRentalAccessError(status.error || "");
+      },
+      onData: (name, data) => {
+        if (name === "profile") setCurrentProfile(data);
+        if (name === "leads") setLeads((data || []).map(mapLead));
+        if (name === "tasks" || name === "visits") syncTaskState(taskCache.current.applyRead(name, data.rows, data.token));
+        if (name === "comments") setComments(dbToComments(data || []));
+        if (name === "profiles") setCorretoresList((data || []).map(dbToCorretor));
+        if (name === "properties") setImoveis((data || []).map(row => ({ ...normalizeProperty(row), _imported: false })));
+        if (name === "rentalAccess") setRentalAccess(data === true);
+      },
     });
-    setLoadErrors(failures);
-    setLoaded(true);
-    setLoading(false);
+    resourceLoader.current = loader;
+    void loader.load("profile");
+    return () => { live = false; loader.dispose(); resourceLoader.current = null; };
   }, [demo, user?.id]);
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (demo || !profileReady || !currentProfile?.ativo) return;
+    const next = crmResourcePlan(currentMenu);
+    void resourceLoader.current?.ensure([...next.required, ...next.background, "rentalAccess"]);
+  }, [demo, currentMenu, profileReady, currentProfile?.ativo]);
+  const loadData = useCallback(() => {
+    if (demo) return;
+    const next = crmResourcePlan(currentMenu);
+    return resourceLoader.current?.ensure(["profile", ...next.required, ...next.background, "rentalAccess"], { refresh: true });
+  }, [demo, currentMenu]);
   useEffect(() => {
     if (!demo || !loaded) return;
     try {
@@ -472,11 +484,7 @@ export default function CrmLayout({
       delete next[id];
       return next;
     });
-    setTasks((prev) =>
-      prev.map((t) =>
-        String(t.leadId) === String(id) ? { ...t, leadId: null } : t,
-      ),
-    );
+    syncTaskState(taskCache.current.unlinkLead(id));
   };
   const addTask = async (task) => {
     const lead = leads.find((item) => String(item.id) === String(task.leadId));
@@ -490,28 +498,27 @@ export default function CrmLayout({
         : db.insertTask(taskToDb(next)),
     );
     const row = demo ? data : dbToTask(data);
-    setTasks((prev) => [...prev, row]);
+    syncTaskState(taskCache.current.upsert(row));
     return row;
   };
   const updateTask = async (id, changes) => {
-    const old = tasks.find((t) => String(t.id) === String(id));
+    const old = taskCache.current.snapshot().tasks.find((t) => String(t.id) === String(id));
+    if (!old) throw new Error("Atividade não encontrada. Atualize a agenda.");
     const next = { ...old, ...changes };
     const data = await persist(() =>
-      demo ? { data: next } : db.updateTask(id, taskToDb(next)),
+      demo ? { data: next } : db.updateTask(id, taskChangesToDb(changes)),
     );
     const row = demo ? data : dbToTask(data);
-    setTasks((prev) =>
-      prev.map((t) => (String(t.id) === String(id) ? row : t)),
-    );
+    syncTaskState(taskCache.current.upsert(row));
     return row;
   };
   const toggleTask = (id) => {
-    const task = tasks.find((t) => t.id === id);
+    const task = taskCache.current.snapshot().tasks.find((t) => String(t.id) === String(id));
     return updateTask(id, { concluida: !task?.concluida });
   };
   const deleteTask = async (id) => {
     await persist(() => (demo ? { data: true } : db.deleteTask(id)));
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+    syncTaskState(taskCache.current.remove(id));
   };
   const addImovel = async (imovel) => {
     const data = await persist(() =>
@@ -598,7 +605,9 @@ export default function CrmLayout({
     setLeadQueueFilter,
     demo,
     leads,
-    tasks,
+    tasks: currentMenu === "visitas" ? visitTasks : tasks,
+    tasksLoading: !resourceReady("tasks") && resourceStatus.tasks?.state !== "error",
+    tasksError: resourceStatus.tasks?.error || "",
     comments,
     imoveis,
     corretoresList,
@@ -628,6 +637,7 @@ export default function CrmLayout({
   const pages = {
     dashboard: <Dashboard {...shared} />,
     leads: <Leads {...shared} />,
+    funil: <Pipeline {...shared} />,
     pipeline: <Pipeline {...shared} />,
     tarefas: <Tarefas key="tarefas" {...shared} />,
     visitas: <Tarefas key="visitas" {...shared} visitsOnly />,
@@ -647,7 +657,7 @@ export default function CrmLayout({
     corretores: <Corretores {...shared} />,
     "add-imovel": <AddImovel {...shared} />,
   };
-  if (!demo && !loading && currentProfile?.ativo === false)
+  if (!demo && profileReady && currentProfile?.ativo !== true)
     return (
       <div className="crm-root">
         <div className="crm-login-form" style={{ minHeight: "100vh" }}>
@@ -666,7 +676,7 @@ export default function CrmLayout({
       </div>
     );
   const scopedLeadIds = new Set(filterPortfolio(leads, portfolioScope, currentProfile).map(lead => String(lead.id)));
-  const pending = tasks.filter(task => !task.concluida && task.data && task.data <= today() && (portfolioScope === "all" || !task.leadId || scopedLeadIds.has(String(task.leadId)))).length;
+  const pending = resourceReady("tasks") ? tasks.filter(task => !task.concluida && task.data && task.data <= today() && (portfolioScope === "all" || !task.leadId || scopedLeadIds.has(String(task.leadId)))).length : 0;
   const changeMenu = (id) => {
     setMenu(id);
     setMobileOpen(false);
@@ -693,8 +703,8 @@ export default function CrmLayout({
               {group.items.map(({ id, label, Icon }) => (
                 <button
                   key={id}
-                  className={menu === id ? "active" : ""}
-                  aria-current={menu === id ? "page" : undefined}
+                  className={currentMenu === id ? "active" : ""}
+                  aria-current={currentMenu === id ? "page" : undefined}
                   onClick={() => changeMenu(id)}
                 >
                   <Icon size={18} />
@@ -745,11 +755,11 @@ export default function CrmLayout({
             </button>
             <div className="crm-topbar-label">
               <span>VilaVix</span>
-              {MENU.find((item) => item.id === menu)?.label || "Novo imóvel"}
+              {MENU.find((item) => item.id === currentMenu)?.label || "Novo imóvel"}
             </div>
           </div>
           <div>
-            {["dashboard", "leads", "pipeline", "tarefas", "visitas"].includes(menu) && (
+            {["dashboard", "leads", "tarefas", "visitas"].includes(currentMenu) && (
               <label className="crm-portfolio-select">
                 <span className="crm-sr-only">Carteira em exibição</span>
                 <select value={portfolioScope} onChange={event => setPortfolioScope(event.target.value)}>
@@ -799,10 +809,14 @@ export default function CrmLayout({
           <Alert tone="success">{notice}</Alert>
           {loading ? (
             <div className="crm-empty" role="status">
-              Carregando contatos e agenda…
+              {profileLoading ? "Verificando sua conta…" : `Carregando ${MENU.find(item => item.id === currentMenu)?.label.toLowerCase() || "esta aba"}…`}
             </div>
+          ) : requiredError ? (
+            <div className="crm-empty" role="status"><p>Esta aba não pôde ser carregada por completo.</p><button className="crm-btn" onClick={loadData}>Tentar novamente</button></div>
           ) : (
-            pages[menu] || pages.dashboard
+            <Suspense fallback={<div className="crm-empty" role="status">Abrindo {MENU.find(item => item.id === currentMenu)?.label.toLowerCase() || "esta aba"}…</div>}>
+              {pages[currentMenu] || pages.dashboard}
+            </Suspense>
           )}
         </div>
       </main>
