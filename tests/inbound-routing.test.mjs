@@ -8,7 +8,7 @@ const brokerB = "10000000-0000-0000-0000-000000000002";
 const admin = "10000000-0000-0000-0000-000000000003";
 const readMigration = (name) => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), "utf8");
 
-test("inbound bridge preserves legacy and notification triggers, routes batches before notification and blocks unsafe campaign fallback", async () => {
+test("inbound bridge preserves legacy until explicit configuration and routes configured campaigns before notification", async () => {
   const db = new PGlite();
   try {
     await db.exec("CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role;CREATE SCHEMA auth;CREATE TABLE auth.users(id uuid PRIMARY KEY,email text,raw_user_meta_data jsonb);CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT NULLIF(current_setting('test.uid',true),'')::uuid$$;");
@@ -18,6 +18,7 @@ test("inbound bridge preserves legacy and notification triggers, routes batches 
       ALTER TABLE leads ADD COLUMN external_id text, ADD COLUMN campanha text;
       CREATE UNIQUE INDEX leads_external_id_uniq ON leads(external_id) WHERE external_id IS NOT NULL;
       CREATE TABLE legacy_probe(lead_id bigint);
+      CREATE TABLE zernio_inbound_log(leadgen_id text,campaign_id text,form_name text,created_at timestamptz DEFAULT now());
       CREATE TABLE notification_probe(lead_id bigint,broker_name text,audit_exists boolean,broker_notification boolean);
       CREATE FUNCTION assign_corretor_roleta() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN
         INSERT INTO legacy_probe VALUES(NEW.id); NEW.corretor:='Legacy broker'; RETURN NEW;
@@ -41,7 +42,9 @@ test("inbound bridge preserves legacy and notification triggers, routes batches 
     await db.query("SELECT set_config('test.uid',$1,false)", [admin]);
     const campaign = { id: "meta-act_test-123", external_id: "123", name: "Aluguel", ad_account_id: "act_test", status: "ACTIVE", effective_status: "ACTIVE", synced_at: new Date().toISOString() };
     await db.query("SELECT sync_zernio_campaigns($1,$2)", [JSON.stringify([campaign]), "act_test"]);
+    assert.equal((await db.query("SELECT routing_configured FROM campaigns")).rows[0].routing_configured, false);
     await db.query("SELECT save_campaign_rules($1,$2,$3,true,2)", [campaign.id, [brokerA, brokerB], JSON.stringify({ [brokerA]: 2, [brokerB]: 1 })]);
+    assert.equal((await db.query("SELECT routing_configured FROM campaigns")).rows[0].routing_configured, true);
 
     const bulk = (await db.query("INSERT INTO leads(nome,origem,campanha,external_id) SELECT 'Batch '||n,'Meta Ads','Aluguel','l:batch-'||n FROM generate_series(1,5) n RETURNING id,corretor,routing_status,campaign_id")).rows;
     assert.deepEqual(bulk.slice(0, 3).map((lead) => lead.corretor), ["Broker A", "Broker B", "Broker A"], "one SQL batch respects 2:1 weights before AFTER auditing");
@@ -62,7 +65,10 @@ test("inbound bridge preserves legacy and notification triggers, routes batches 
     await db.exec("UPDATE campaigns SET synced_at=now(),start_time=now()+interval '1 day'");
     assert.match((await addLead("Future")).routing_reason, /período ativo/);
     await db.exec("UPDATE campaigns SET start_time=NULL");
-    assert.match((await addLead("Unknown", { campanha: "Missing from Zernio" })).routing_reason, /não encontrada/);
+    const unknown = await addLead("Unknown", { campanha: "Missing from Zernio" });
+    assert.match(unknown.routing_reason, /não encontrada/);
+    assert.equal(unknown.corretor, "Legacy broker", "unidentified campaigns preserve current routing during transition");
+    assert.equal(unknown.routing_source, "legacy");
     const missingId = await addLead("Invalid external campaign", { campaignId: "not-in-campaign-table" });
     assert.equal(missingId.campaign_id, null, "unknown external identifiers remain captured for review instead of violating the FK");
     await db.exec("INSERT INTO campaigns(id,external_id,name,status,effective_status,source) VALUES('duplicate-name','456','Aluguel','ACTIVE','ACTIVE','meta')");
@@ -79,7 +85,7 @@ test("inbound bridge preserves legacy and notification triggers, routes batches 
     const manual = await addLead("Manual owner", { corretor: "Manual broker" });
     assert.equal(manual.corretor, "Manual broker");
     assert.equal(manual.routing_source, "manual");
-    assert.equal((await db.query("SELECT count(*)::int AS total FROM legacy_probe")).rows[0].total, 1, "Meta failures never leak into legacy fallback");
+    assert.equal((await db.query("SELECT count(*)::int AS total FROM legacy_probe")).rows[0].total, 4, "unknown, invalid, ambiguous and site leads retain legacy routing; configured campaign blocks do not");
 
     const counts = async () => (await db.query("SELECT (SELECT count(*) FROM lead_assignments)::int AS assignments,(SELECT count(*) FROM notification_probe)::int AS notifications,(SELECT count(*) FROM comments)::int AS comments")).rows[0];
     const beforeDuplicate = await counts();
@@ -91,6 +97,47 @@ test("inbound bridge preserves legacy and notification triggers, routes batches 
     const retry = (await db.query("SELECT * FROM route_lead($1,$2)", [paused.id, campaign.id])).rows[0];
     assert.equal(firstRoute.id, retry.id);
     assert.deepEqual(await counts(), beforeRetry, "admin retries cannot duplicate assignment, comment, or notification");
+
+    const transitional = { ...campaign, id: "meta-act_test-789", external_id: "789", name: "New campaign", status: "PAUSED", effective_status: "PAUSED" };
+    await db.query("SELECT sync_zernio_campaigns($1,$2)", [JSON.stringify([campaign, transitional]), "act_test"]);
+    const notConfigured = await addLead("Unconfigured paused", { campaignId: transitional.id });
+    assert.equal(notConfigured.corretor, "Legacy broker");
+    assert.equal(notConfigured.routing_source, "legacy");
+    assert.equal(notConfigured.campaign_id, transitional.id);
+    assert.match(notConfigured.routing_reason, /não configuradas/);
+    await db.exec("UPDATE campaigns SET status='ACTIVE',effective_status='ACTIVE' WHERE external_id='789'");
+    const unconfiguredPreview = (await db.query("SELECT preview_campaign_routing($1) AS value", [transitional.id])).rows[0].value;
+    assert.equal(unconfiguredPreview.nextBroker, null);
+    assert.match(unconfiguredPreview.reason, /distribuição atual/);
+    const notConfiguredActive = await addLead("Unconfigured active", { campaignId: transitional.id });
+    assert.equal(notConfiguredActive.corretor, "Legacy broker");
+    await db.query("SELECT set_config('test.uid',$1,false)", [brokerA]);
+    await assert.rejects(db.query("SELECT save_campaign_rules($1,$2,$3,true,NULL)", [transitional.id, [brokerA], JSON.stringify({ [brokerA]: 1 })]), /Somente administradores/);
+    assert.equal((await db.query("SELECT routing_configured FROM campaigns WHERE id=$1", [transitional.id])).rows[0].routing_configured, false, "a broker cannot opt a campaign into new routing");
+    await db.query("SELECT set_config('test.uid',$1,false)", [admin]);
+    await db.query("SELECT save_campaign_rules($1,$2,$3,false,NULL)", [transitional.id, [brokerA], JSON.stringify({ [brokerA]: 1 })]);
+    const deliberatelyDisabled = await addLead("Configured disabled", { campaignId: transitional.id });
+    assert.equal(deliberatelyDisabled.corretor, null);
+    assert.equal(deliberatelyDisabled.routing_status, "pending");
+    assert.match(deliberatelyDisabled.routing_reason, /desativada/);
+    await db.query("SELECT sync_zernio_campaigns($1,$2)", [JSON.stringify([campaign, { ...transitional, status: "ACTIVE", effective_status: "ACTIVE", routing_configured: false, routing_enabled: true }]), "act_test"]);
+    assert.deepEqual((await db.query("SELECT routing_configured,routing_enabled FROM campaigns WHERE id=$1", [transitional.id])).rows[0], { routing_configured: true, routing_enabled: false }, "provider synchronization cannot undo deliberate configuration or re-enable a disabled rule");
+
+    await db.query("INSERT INTO zernio_inbound_log(leadgen_id,campaign_id,form_name) VALUES('prior','123','Aluguel Formulario v1')");
+    const formLead = await addLead("Form name identity", { campanha: "Aluguel Formulario v1" });
+    assert.equal(formLead.campaign_id, campaign.id, "a unique recent observed form resolves the actual campaign ID");
+    assert.equal(formLead.routing_status, "assigned");
+    await db.query("INSERT INTO zernio_inbound_log(leadgen_id,campaign_id,form_name) VALUES('other','not-yet-synced','Aluguel Formulario v1')");
+    const ambiguousForm = await addLead("Ambiguous form identity", { campanha: "Aluguel Formulario v1" });
+    assert.equal(ambiguousForm.campaign_id, null, "ambiguity includes IDs absent from the catalog");
+    assert.equal(ambiguousForm.corretor, "Legacy broker");
+    assert.match(ambiguousForm.routing_reason, /campanhas diferentes/);
+    const knownDelivery = await addLead("Known delivery identity", { campanha: "Aluguel Formulario v1", externalId: "l:prior" });
+    assert.equal(knownDelivery.campaign_id, campaign.id, "the exact delivery ID wins over an ambiguous form history");
+    await db.exec("UPDATE zernio_inbound_log SET created_at=now()-interval '31 days'");
+    const staleForm = await addLead("Stale form history", { campanha: "Aluguel Formulario v1" });
+    assert.equal(staleForm.corretor, "Legacy broker");
+    assert.equal(staleForm.campaign_id, null, "stale form history does not guess a campaign");
     const privileges = (await db.query("SELECT has_function_privilege('authenticated','campaign_routing_candidates(text)','EXECUTE') AS candidates,has_function_privilege('service_role','campaign_routing_candidates(text)','EXECUTE') AS service_candidates,has_function_privilege('authenticated','route_lead(bigint,text)','EXECUTE') AS route")).rows[0];
     assert.deepEqual(privileges, { candidates: false, service_candidates: false, route: true });
   } finally { await db.close(); }

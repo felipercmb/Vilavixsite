@@ -2,6 +2,10 @@
 -- No existing lead is assigned, updated, notified, or removed by this migration.
 BEGIN;
 
+-- Existing integrations retain their participants until an administrator saves
+-- this campaign's rules. A saved, disabled rule is an intentional stop, not fallback.
+ALTER TABLE public.campaigns ADD COLUMN IF NOT EXISTS routing_configured boolean NOT NULL DEFAULT false;
+
 ALTER TABLE public.leads
  ADD COLUMN IF NOT EXISTS campanha text,
  ADD COLUMN IF NOT EXISTS external_id text,
@@ -19,6 +23,7 @@ CREATE OR REPLACE FUNCTION public.campaign_routing_block_reason(p_campaign publi
 RETURNS text LANGUAGE plpgsql STABLE SET search_path=public AS $$
 BEGIN
  IF p_campaign.id IS NULL THEN RETURN 'Campanha não encontrada.'; END IF;
+ IF NOT p_campaign.routing_configured THEN RETURN 'Campanha ainda usa a distribuição atual. Salve as regras para usar a roleta por campanha.'; END IF;
  IF p_campaign.status IS DISTINCT FROM 'ACTIVE' OR p_campaign.effective_status IS DISTINCT FROM 'ACTIVE'
   THEN RETURN 'Campanha inativa na origem.'; END IF;
  IF NOT p_campaign.routing_enabled THEN RETURN 'Distribuição da campanha desativada.'; END IF;
@@ -58,7 +63,7 @@ REVOKE ALL ON FUNCTION public.campaign_routing_candidates(text) FROM PUBLIC,anon
 CREATE OR REPLACE FUNCTION public.assign_lead_campaign_on_insert()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE c public.campaigns; chosen record; reference text; matches_count integer;
- candidate_ids text[]; explicit_campaign boolean; meta_origin boolean; blocked text;
+ candidate_ids text[]; log_ids text[]; explicit_campaign boolean; meta_origin boolean; blocked text;
 BEGIN
  -- Never trust caller-supplied bookkeeping fields, even on service-role inserts.
  NEW.routing_source:='legacy'; NEW.routing_status:='legacy'; NEW.routing_reason:=NULL;
@@ -87,22 +92,50 @@ BEGIN
   IF COALESCE(cardinality(candidate_ids),0)=0 AND NOT explicit_campaign THEN
    SELECT array_agg(id) INTO candidate_ids FROM public.campaigns WHERE lower(btrim(name))=lower(reference) AND source='meta';
   END IF;
+  -- The legacy webhook stores the form name in campanha, not the campaign name.
+  -- A previously observed delivery/form can resolve the real ID, but only when
+  -- ALL matching recent log entries agree. Never use substring name matching.
+  IF COALESCE(cardinality(candidate_ids),0)=0 AND NOT explicit_campaign AND to_regclass('public.zernio_inbound_log') IS NOT NULL THEN
+   IF NEW.external_id LIKE 'l:%' THEN
+    EXECUTE 'SELECT array_agg(DISTINCT btrim(campaign_id)) FROM public.zernio_inbound_log
+      WHERE leadgen_id=$1 AND NULLIF(btrim(campaign_id),'''') IS NOT NULL'
+     INTO log_ids USING substring(NEW.external_id FROM 3);
+   END IF;
+   IF COALESCE(cardinality(log_ids),0)=0 THEN
+    EXECUTE 'SELECT array_agg(DISTINCT btrim(campaign_id)) FROM public.zernio_inbound_log
+      WHERE lower(btrim(form_name))=lower($1) AND created_at>=now()-interval ''30 days''
+       AND NULLIF(btrim(campaign_id),'''') IS NOT NULL'
+     INTO log_ids USING reference;
+   END IF;
+   IF cardinality(log_ids)=1 THEN
+    SELECT array_agg(id) INTO candidate_ids FROM public.campaigns WHERE external_id=log_ids[1] AND source='meta';
+   ELSIF cardinality(log_ids)>1 THEN
+    NEW.campaign_id:=NULL;
+    NEW.routing_reason:='Formulário associado a campanhas diferentes. Distribuição atual preservada até identificação pelo ID.';
+    RETURN NEW;
+   END IF;
+  END IF;
  END IF;
  matches_count:=COALESCE(cardinality(candidate_ids),0);
  IF matches_count<>1 THEN
   IF meta_origin OR explicit_campaign OR matches_count>1 THEN
-   -- Keep the lead for review and preserve the existing company-level notification.
-   -- Crucially, the legacy fallback cannot distribute an unidentified Meta lead.
-   NEW.campaign_id:=NULL; NEW.routing_source:='campaign'; NEW.routing_status:='pending';
-   NEW.routing_reason:=CASE WHEN matches_count>1 THEN 'Nome de campanha ambíguo. Identifique a campanha pelo ID.'
-    WHEN reference IS NULL THEN 'Lead da Meta sem identificação de campanha.'
-    ELSE 'Campanha ainda não encontrada na sincronização da Zernio.' END;
+   -- Transition is opt-in. Preserve the real legacy rule/fixed owner when the
+   -- source cannot yet identify a configured campaign; retain a reason to audit.
+   NEW.campaign_id:=NULL;
+   NEW.routing_reason:=CASE WHEN matches_count>1 THEN 'Nome de campanha ambíguo. Distribuição atual preservada até identificação pelo ID.'
+    WHEN reference IS NULL THEN 'Lead da Meta sem identificação de campanha. Distribuição atual preservada.'
+    ELSE 'Campanha ainda não encontrada na sincronização da Zernio. Distribuição atual preservada.' END;
   END IF;
   RETURN NEW;
  END IF;
 
  SELECT * INTO c FROM public.campaigns WHERE id=candidate_ids[1] FOR UPDATE;
- NEW.campaign_id:=c.id; NEW.routing_source:='campaign'; NEW.routing_status:='pending';
+ NEW.campaign_id:=c.id;
+ IF NOT c.routing_configured THEN
+  NEW.routing_reason:='Regras desta campanha ainda não configuradas. Distribuição atual preservada.';
+  RETURN NEW;
+ END IF;
+ NEW.routing_source:='campaign'; NEW.routing_status:='pending';
  blocked:=public.campaign_routing_block_reason(c);
  IF blocked IS NOT NULL THEN NEW.routing_reason:=blocked; RETURN NEW; END IF;
  SELECT * INTO chosen FROM public.campaign_routing_candidates(c.id) LIMIT 1;
@@ -180,4 +213,60 @@ BEGIN
 END;$$;
 REVOKE ALL ON FUNCTION public.route_lead(bigint,text) FROM PUBLIC,anon,service_role;
 GRANT EXECUTE ON FUNCTION public.route_lead(bigint,text) TO authenticated;
+-- Saving rules is the explicit transition to campaign routing. Metadata sync must
+-- never toggle this flag, including when a previously paused campaign is resumed.
+CREATE OR REPLACE FUNCTION public.save_campaign_rules(p_id text,p_broker_ids uuid[],p_weights jsonb,p_enabled boolean,p_daily_limit integer) RETURNS public.campaigns
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE result public.campaigns; bid uuid; weight numeric;
+BEGIN
+ IF NOT public.is_crm_admin() THEN RAISE EXCEPTION 'Somente administradores podem editar a roleta.';END IF;
+ IF p_daily_limit IS NOT NULL AND p_daily_limit<0 THEN RAISE EXCEPTION 'Limite diário inválido.';END IF;
+ FOREACH bid IN ARRAY p_broker_ids LOOP
+  IF NOT EXISTS(SELECT 1 FROM public.profiles WHERE id=bid) THEN RAISE EXCEPTION 'Corretor não encontrado.';END IF;
+  weight:=COALESCE((p_weights->>bid::text)::numeric,1);
+  IF weight<0 OR weight>100 THEN RAISE EXCEPTION 'Peso deve estar entre 0 e 100.';END IF;
+ END LOOP;
+ UPDATE public.campaigns SET broker_ids=p_broker_ids,weights=p_weights,routing_configured=true,routing_enabled=p_enabled,daily_limit=p_daily_limit WHERE id=p_id RETURNING * INTO result;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Campanha não encontrada. Sincronize pela Zernio.';END IF;
+ RETURN result;
+END;$$;
+REVOKE ALL ON FUNCTION public.save_campaign_rules(text,uuid[],jsonb,boolean,integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.save_campaign_rules(text,uuid[],jsonb,boolean,integer) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.preview_campaign_routing(p_campaign_id text) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=public AS $$
+DECLARE c public.campaigns; eligible jsonb; reason text; blocked text;
+ day_start timestamptz:=date_trunc('day',now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo';
+BEGIN
+ IF NOT public.is_crm_admin() THEN RAISE EXCEPTION 'Somente administradores podem consultar a roleta.';END IF;
+ SELECT * INTO c FROM public.campaigns WHERE id=p_campaign_id;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Campanha não encontrada. Sincronize a Zernio.';END IF;
+ SELECT COALESCE(jsonb_agg(item ORDER BY score,last_at ASC NULLS FIRST,broker_id),'[]'::jsonb) INTO eligible
+ FROM (
+  SELECT p.id AS broker_id,h.last_at,
+   h.today/COALESCE((c.weights->>p.id::text)::numeric,1) AS score,
+   to_jsonb(p)||jsonb_build_object(
+    'weight',COALESCE((c.weights->>p.id::text)::numeric,1),
+    'assignedToday',h.today,'assignedTotal',h.total,
+    'capacityRemaining',CASE WHEN c.daily_limit IS NULL THEN NULL ELSE GREATEST(0,c.daily_limit-h.today) END,
+    'lastAssigned',COALESCE(EXTRACT(EPOCH FROM h.last_at)*1000,0)
+   ) AS item
+  FROM public.profiles p
+  LEFT JOIN LATERAL(
+   SELECT count(*) FILTER(WHERE a.assigned_at>=day_start) AS today,count(*) AS total,max(a.assigned_at) AS last_at
+   FROM public.lead_assignments a WHERE a.campaign_id=c.id AND a.broker_id=p.id
+  ) h ON true
+  WHERE p.id=ANY(c.broker_ids) AND p.ativo=true
+   AND COALESCE((c.weights->>p.id::text)::numeric,1)>0
+   AND(c.daily_limit IS NULL OR h.today<c.daily_limit)
+ ) ranked;
+ blocked:=public.campaign_routing_block_reason(c);
+ reason:=blocked;
+ IF reason IS NULL AND jsonb_array_length(eligible)=0 THEN reason:='Nenhum corretor elegível: confira participantes, pausa e limite diário.'; END IF;
+ RETURN jsonb_build_object('campaign',to_jsonb(c),'eligibleBrokers',eligible,
+  'nextBroker',CASE WHEN reason IS NULL THEN eligible->0 ELSE NULL END,'reason',reason);
+END;$$;
+REVOKE ALL ON FUNCTION public.preview_campaign_routing(text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.preview_campaign_routing(text) TO authenticated;
+
 COMMIT;

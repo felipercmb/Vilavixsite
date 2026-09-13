@@ -104,6 +104,14 @@ function CampaignRules({
             status vêm da origem. Salvar estas regras não ativa, pausa nem
             altera anúncios.
           </Alert>
+          {!campaign.routing_configured && (
+            <Alert tone="info">
+              Esta campanha continua usando a distribuição atual. Ao salvar,
+              passa a usar os participantes e limites escolhidos abaixo. Se a
+              distribuição estiver desabilitada, os novos leads aguardarão um
+              responsável no CRM.
+            </Alert>
+          )}
           {!ACTIVE(campaign) && (
             <Alert tone="warning">
               Esta campanha não está ativa no período atual. Você pode preparar
@@ -642,7 +650,9 @@ export default function Campanhas({
                           <Badge
                             status={c.routing_enabled ? "ativo" : "descartado"}
                           >
-                            {c.routing_enabled ? "Habilitada" : "Desabilitada"}
+                            {!c.routing_configured
+                              ? "Distribuição atual"
+                              : c.routing_enabled ? "Habilitada" : "Desabilitada"}
                           </Badge>
                         </td>
                         <td>

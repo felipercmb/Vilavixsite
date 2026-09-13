@@ -4,9 +4,9 @@ A migração `20260912200000_inbound_campaign_bridge.sql` conecta a roleta por c
 
 ## Fluxo preservado
 
-1. `leads_00_campaign_route` identifica a campanha pelo identificador interno, pelo ID externo da Meta ou pelo nome exato, sem diferença entre maiúsculas e minúsculas. Um nome compartilhado por duas campanhas precisa ser identificado pelo ID.
-2. Para uma campanha ativa, sincronizada nos últimos 30 minutos e com distribuição habilitada, escolhe um corretor ativo dentro dos participantes, pesos e limites diários. O nome e o ID do corretor entram no próprio registro antes do aviso.
-3. `leads_roleta` continua usando a função original `assign_corretor_roleta()` para entradas que não pertencem à distribuição por campanha. A condição do trigger impede que sua regra genérica sobrescreva um bloqueio da roleta nova.
+1. `leads_00_campaign_route` identifica a campanha pelo identificador interno, pelo ID externo da Meta ou pelo nome exato, sem diferença entre maiúsculas e minúsculas. A integração antiga também envia nomes de formulários em `campanha`: quando não houver correspondência direta, a ponte consulta o ID da mesma entrega em `zernio_inbound_log` ou a associação única do formulário nos últimos 30 dias. Um nome associado a IDs diferentes permanece sem identificação automática, inclusive se algum desses IDs ainda não estiver no catálogo.
+2. A transição é individual: `routing_configured` começa como `false`. Enquanto o administrador não salvar as regras da campanha, continua a distribuição existente, incluindo regras específicas e responsável fixo. Campanhas desconhecidas ou ambíguas também preservam esse fluxo; `routing_reason` registra o motivo. Salvar por `save_campaign_rules` marca `routing_configured=true`, sem alterar anúncios.
+3. Para uma campanha configurada, ativa, sincronizada nos últimos 30 minutos e com distribuição habilitada, escolhe um corretor ativo dentro dos participantes, pesos e limites diários. O nome e o ID do corretor entram no próprio registro antes do aviso. `leads_roleta` continua usando a função original `assign_corretor_roleta()` somente para entradas que permanecem na distribuição existente. Sua regra genérica não sobrescreve um bloqueio deliberado de uma campanha configurada.
 4. `leads_campaign_audit` grava a atribuição e o comentário depois que o lead existe.
 5. `leads_notify_whatsapp` permanece intacto. Recebe o registro com o corretor definido; quando ele está sem corretor, permanece o aviso à empresa previsto na função atual.
 
@@ -14,7 +14,9 @@ Um responsável informado explicitamente no cadastro continua sendo tratado como
 
 ## Leads aguardando revisão
 
-Campanhas pausadas, desatualizadas, fora do período, desabilitadas ou sem participantes disponíveis não distribuem automaticamente. A mesma regra vale para entradas da Meta com campanha ausente, desconhecida ou ambígua. O contato é salvo com `routing_status='pending'` e a explicação em `routing_reason`, mantendo o nome recebido em `routing_campaign_reference`. Essas entradas não passam pelo fallback legado.
+Depois de configuradas, campanhas pausadas, desatualizadas, fora do período, desabilitadas ou sem participantes disponíveis não distribuem automaticamente. O contato é salvo com `routing_status='pending'` e a explicação em `routing_reason`, mantendo o nome recebido em `routing_campaign_reference`. Essas entradas não passam pelo fallback legado. Desabilitar uma regra já configurada é uma suspensão explícita; não volta à distribuição antiga.
+
+Antes da configuração individual, os leads continuam atendidos pela função legada, com `routing_source='legacy'` e motivo registrado. A sincronização não escolhe participantes nem muda `routing_configured`: descobrir uma campanha ou vê-la ficar ativa não altera sozinho a equipe responsável. O primeiro lead de um formulário sem histórico ainda depende do ID enviado pela integração; a ponte nunca inventa essa associação.
 
 A sincronização recorrente da Zernio deve estar configurada antes de habilitar a distribuição automática. A integração exige uma atualização a cada 30 minutos, no máximo. A sincronização de campanhas preserva as regras e não redistribui pendências; a distribuição posterior continua sendo uma ação explícita do administrador.
 
@@ -28,4 +30,4 @@ O RPC `route_lead` usa a mesma seleção, continua restrito a administradores e 
 
 ## Verificação local
 
-`tests/inbound-routing.test.mjs` aplica a migração duas vezes e testa uma entrada em lote, pesos, capacidade, identidade, campanhas bloqueadas, fallback legado, responsável manual, duplicatas, reexecução do RPC e permissões dos auxiliares. O teste substitui o transporte de WhatsApp por uma tabela local de observação; nenhuma mensagem é enviada.
+`tests/inbound-routing.test.mjs` aplica a migração duas vezes e testa uma entrada em lote, pesos, capacidade, identidade, campanhas bloqueadas, transição individual, suspensão explícita, preservação das regras na sincronização, nomes de formulário, históricos ambíguos e antigos, responsável manual, duplicatas, reexecução do RPC e permissões dos auxiliares. O teste substitui o transporte de WhatsApp por uma tabela local de observação; nenhuma mensagem é enviada.
