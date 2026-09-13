@@ -3,8 +3,10 @@ import { ArrowLeft, Eye, EyeOff, ArrowRight, LockKeyhole } from "lucide-react";
 import Logo from "../components/Logo.jsx";
 import { authSignIn, authResetPassword } from "../lib/db.js";
 import { Field, Alert } from "./crm/CRMUI.jsx";
-import { catalogSnapshot } from "../lib/catalog.js";
 import "../styles/crm.css";
+
+// Keep the existing photo without loading the entire public property inventory.
+const LOGIN_PHOTO = "https://fotos.sobressai.com.br/fotos/2169/2395574/34610269_g.jpg";
 export default function LoginPage({ onLogin, navigate, onDemo }) {
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
@@ -47,9 +49,7 @@ export default function LoginPage({ onLogin, navigate, onDemo }) {
       <section
         className="crm-login-visual"
         style={{
-          backgroundImage: catalogSnapshot[0]?.img
-            ? `url(${catalogSnapshot[0].img})`
-            : undefined,
+          backgroundImage: `url(${LOGIN_PHOTO})`,
         }}
       >
         <div>

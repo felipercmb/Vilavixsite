@@ -1,18 +1,9 @@
 import React, { Suspense, lazy, useCallback, useEffect, useState } from "react";
-import Navbar from "./components/Navbar.jsx";
-import Footer from "./components/Footer.jsx";
-import WppFloat from "./components/WppFloat.jsx";
-import HomePage from "./pages/public/Home.jsx";
-import AluguelPage from "./pages/public/Aluguel.jsx";
-import ImoveisPage from "./pages/public/Imoveis.jsx";
-import ImovelDetailPage from "./pages/public/ImovelDetail.jsx";
-import SobrePage from "./pages/public/Sobre.jsx";
-import ContatoPage from "./pages/public/Contato.jsx";
-import BlogPage from "./pages/public/Blog.jsx";
 import LoginPage from "./pages/Login.jsx";
 import ResetPassword from "./pages/ResetPassword.jsx";
 import { supabase } from "./lib/supabase.js";
 import { authSignOut } from "./lib/db.js";
+const PublicSite = lazy(() => import("./pages/PublicSite.jsx"));
 const CrmLayout = lazy(() => import("./pages/crm/CrmLayout.jsx"));
 const titleMap = {
   home: "Imóveis na Grande Vitória",
@@ -154,7 +145,7 @@ export default function App() {
       return (
         <Suspense fallback={loading}>
           <CrmLayout
-            key={route.demo ? "demo" : "live"}
+            key={route.demo ? "demo" : authUser.id}
             demo={Boolean(route.demo)}
             user={
               route.demo
@@ -193,37 +184,15 @@ export default function App() {
         }
       />
     );
-  const props = {
-    navigate,
-    filters: route.filters || {},
-    initialFilters: route.filters || {},
-  };
   return (
-    <>
-      <a
-        className="skip-link"
-        href="#main-content"
-        onClick={(e) => {
-          e.preventDefault();
-          document.getElementById("main-content")?.focus();
-        }}
-      >
-        Pular para o conteúdo
-      </a>
-      <Navbar page={route.page} navigate={navigate} />
-      <div id="main-content" tabIndex={-1} style={{ minHeight: "65vh" }}>
-        {route.page === "home" && <HomePage {...props} />}
-        {route.page === "imoveis" && <ImoveisPage {...props} />}
-        {route.page === "aluguel" && <AluguelPage {...props} />}
-        {route.page === "imovel-detail" && (
-          <ImovelDetailPage {...props} imovelId={route.imovelId} />
-        )}
-        {route.page === "sobre" && <SobrePage {...props} />}
-        {route.page === "contato" && <ContatoPage {...props} />}
-        {route.page === "blog" && <BlogPage {...props} />}
-      </div>
-      <Footer navigate={navigate} />
-      <WppFloat />
-    </>
+    <Suspense
+      fallback={
+        <main role="status" style={{ padding: 64, textAlign: "center" }}>
+          Carregando o site VilaVix…
+        </main>
+      }
+    >
+      <PublicSite route={route} navigate={navigate} />
+    </Suspense>
   );
 }
