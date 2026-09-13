@@ -5,8 +5,8 @@
 - Domínio: https://vilavix.com (e www.vilavix.com).
 - Vercel: equipe `vila-vix`, projeto `vilavixsite`.
 - Supabase: `xrbegboejhaumwbtpuej`.
-- Versão publicada: `dpl_HRaiEPdAY2Yd1h33PAEqUbqW7qQW`, código `f249c99`.
-- Seis migrações aplicadas; 599 imóveis, com códigos únicos e origem verificada.
+- Versão publicada: `dpl_HFkzs62tGPyNFwwn61NTXSsS4FTC`, código `11d0598`.
+- Sete migrações aplicadas; 599 imóveis, com códigos únicos e origem verificada.
 - Carteira privada liberada somente para Weder, Wellington e Felipe. Nove tabelas com RLS e documentos em bucket privado.
 - Antes e depois da migração: 2.201 leads, 18.026 tarefas, 473 comentários e 10 perfis. Nenhum lead ou registro financeiro de teste foi criado.
 
@@ -48,6 +48,14 @@ O job `vilavix-zernio-campaign-sync` está ativo a cada dez minutos. A função 
 
 A atribuição ocorre antes de `leads_notify_whatsapp`. As funções legadas de distribuição e notificação foram preservadas; a ponte controla qual distribuição usar. Não enviar leads de teste à produção: os gatilhos disparam notificações reais. Consulte [Entrada de leads](ENTRADA-DE-LEADS.md).
 
+## CRM: carregamento e funil completo
+
+O menu **Funil completo** abre `/crm/funil`, com as seis etapas, incluindo fechados e descartados. A rota antiga `/crm/pipeline` continua funcionando. A visualização inicial inclui todos os contatos que o usuário pode consultar; os filtros são próprios do funil. As contagens consideram todos os registros, com 20 cartões por página em cada etapa. Etapas antigas desconhecidas aparecem em uma seção para revisão.
+
+O CRM carrega dados por aba. Visitas consulta apenas atividades desse tipo; o funil e Meu dia liberam os contatos enquanto a agenda carrega. Nenhuma aba do CRM precisa baixar o catálogo público completo para iniciar. A agenda renderiza 60 atividades por página, mantendo os totais completos. Falhas de consulta exibem erro e nova tentativa, sem apresentar dados parciais como se fossem completos.
+
+A migração `20260913020000_crm_read_performance.sql` adiciona índices de ordenação e evita repetir verificações de sessão a cada linha, sem mudar quem pode acessar os dados. A validação no banco real preservou 2.201 leads e 18.026 tarefas para o administrador; a carteira de corretor verificada permaneceu com 76 leads e 869 tarefas, sem acesso fora dos vínculos autorizados.
+
 ## Novas instalações e manutenção
 
 Aplicar as migrações na ordem dos nomes, após inspecionar o esquema existente. Não substituir um banco em uso pelo esquema base. A importação preserva o status de imóveis já cadastrados; ver [Catálogo](catalog-import.md).
@@ -56,4 +64,4 @@ Permissões da carteira devem usar contas exatas autorizadas; não são derivada
 
 ## Validação
 
-63 testes automatizados passaram, além de oito cenários isolados da função de entrada e verificação Deno. O build de produção concluiu. As rotas públicas responderam HTTP 200 e a API de campanhas recusou visitantes com HTTP 401. O navegador confirmou a nova página inicial e a exigência de login da carteira. As permissões foram verificadas no banco real, incluindo negação para visitantes e para corretor fora dos três autorizados.
+85 testes automatizados passaram, além de oito cenários isolados da função de entrada e verificação Deno. O build de produção concluiu. O navegador autenticado confirmou 2.201 contatos no Funil completo, seis etapas e paginação com os totais preservados. As rotas públicas responderam HTTP 200 e a API de campanhas recusou visitantes com HTTP 401. O navegador confirmou a nova página inicial e a exigência de login da carteira. As permissões foram verificadas no banco real, incluindo negação para visitantes e para corretor fora dos três autorizados.
