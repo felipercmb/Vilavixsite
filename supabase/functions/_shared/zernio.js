@@ -70,6 +70,27 @@ export async function zernioGet(path, params, env, fetcher = fetch) {
     );
   return data;
 }
+export async function discoverCampaignIds(env, fetcher = fetch) {
+  // A local preview without server credentials can still inspect the provider list.
+  if (!env.SUPABASE_URL && !env.SUPABASE_SERVICE_ROLE_KEY) return [];
+  let projectUrl;
+  try { projectUrl = new URL(env.SUPABASE_URL || ""); } catch { /* Report only a safe configuration error. */ }
+  if (!projectUrl || projectUrl.protocol !== "https:" || !/^[a-z0-9]+\.supabase\.co$/.test(projectUrl.hostname) || projectUrl.username || projectUrl.password || projectUrl.search || projectUrl.hash || !["", "/"].includes(projectUrl.pathname) || !env.SUPABASE_SERVICE_ROLE_KEY)
+    throw new IntegrationError("Configure a descoberta de campanhas no servidor.", 503);
+  const response = await fetcher(new URL("/rest/v1/rpc/discover_zernio_campaign_ids", projectUrl), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, apikey: env.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ p_account_id: env.ZERNIO_AD_ACCOUNT_ID, p_lookback_days: 90, p_limit: 500 }),
+    signal: AbortSignal.timeout(45000),
+  });
+  if (!response.ok)
+    throw new IntegrationError("Não foi possível consultar os identificadores das campanhas recebidas. A sincronização foi interrompida para preservar as campanhas existentes.", 503);
+  const rows = await response.json();
+  if (!Array.isArray(rows) || rows.length > 500 || rows.some((row) => typeof row?.campaign_id !== "string" || !/^\d{1,30}$/.test(row.campaign_id)))
+    throw new IntegrationError("A descoberta retornou identificadores de campanha inválidos ou incompletos.");
+  return [...new Set(rows.map((row) => row.campaign_id))];
+}
+
 export async function fetchCampaigns(env, fetcher = fetch) {
   const accountId = env.ZERNIO_ACCOUNT_ID;
   const adAccountId = env.ZERNIO_AD_ACCOUNT_ID;
@@ -78,6 +99,9 @@ export async function fetchCampaigns(env, fetcher = fetch) {
       "Configure a conexão e a conta de anúncios da VilaVix no servidor.",
       503,
     );
+  // Listing alone can omit campaigns that are already delivering leads.
+  // Failure to recover any known ID must abort before persistence marks it absent.
+  const discoveredIds = new Set(await discoverCampaignIds(env, fetcher));
   const rows = [];
   let page = 1;
   let pages = 1;
@@ -94,15 +118,14 @@ export async function fetchCampaigns(env, fetcher = fetch) {
       );
     rows.push(...payload.campaigns);
     pages = Number(payload.pagination?.pages || 1);
-    if (pages > 100)
+    if (!Number.isInteger(pages) || pages < 1 || pages > 100)
       throw new IntegrationError(
         "A consulta excedeu o limite de páginas. Restrinja a conta de anúncios.",
       );
     page++;
   } while (page <= pages);
   const syncedAt = new Date().toISOString();
-  const campaigns = [
-    ...new Map(
+  const campaignsById = new Map(
       rows
         .filter(
           (r) =>
@@ -113,29 +136,50 @@ export async function fetchCampaigns(env, fetcher = fetch) {
           String(r.platformCampaignId),
           normalizeCampaign(r, syncedAt),
         ]),
-    ).values(),
-  ];
+    );
   // A cached aggregate cannot authorize routing after a campaign was paused.
-  const candidates = campaigns.filter((c) => c.effective_status === "ACTIVE");
+  const candidates = [...new Set([
+    ...discoveredIds,
+    ...[...campaignsById.values()].filter((c) => c.effective_status === "ACTIVE").map((c) => c.external_id),
+  ])];
   for (let offset = 0; offset < candidates.length; offset += 4) {
     await Promise.all(
-      candidates.slice(offset, offset + 4).map(async (campaign) => {
+      candidates.slice(offset, offset + 4).map(async (externalId) => {
         const result = await zernioGet(
-          `ads/campaigns/${encodeURIComponent(campaign.external_id)}`,
-          { accountId, fields: "id,status,effective_status" },
+          `ads/campaigns/${encodeURIComponent(externalId)}`,
+          { accountId, fields: "id,name,account_id,status,effective_status,objective,start_time,stop_time" },
           env,
           fetcher,
         );
         const current = result.campaign;
         if (
           !current ||
-          String(current.id) !== campaign.external_id ||
+          String(current.id) !== externalId ||
           !current.status ||
           !current.effective_status
         )
           throw new IntegrationError(
-            "Não foi possível confirmar o estado atual de uma campanha ativa. A distribuição permanece bloqueada até uma nova sincronização.",
+            "Não foi possível confirmar o estado atual de uma campanha conhecida. A sincronização foi interrompida para preservar o catálogo.",
           );
+        const currentAccount = String(current.account_id || "").replace(/^act_/, "");
+        if ((discoveredIds.has(externalId) && !currentAccount) || (currentAccount && currentAccount !== String(adAccountId).replace(/^act_/, "")))
+          throw new IntegrationError("Não foi possível confirmar a conta de anúncios de uma campanha conhecida.");
+        let campaign = campaignsById.get(externalId);
+        if (!campaign) {
+          if (typeof current.name !== "string" || !current.name.trim())
+            throw new IntegrationError("A Zernio retornou metadados incompletos de uma campanha recebida.");
+          campaign = normalizeCampaign({
+            platformCampaignId: externalId, platformAdAccountId: adAccountId,
+            platform: "facebook", campaignName: current.name, status: current.status,
+            platformCampaignStatus: current.status, platformObjective: current.objective,
+            schedule: { startDate: current.start_time, endDate: current.stop_time },
+          }, syncedAt);
+          campaignsById.set(externalId, campaign);
+        }
+        if (current.name) campaign.name = current.name;
+        if (Object.hasOwn(current, "objective")) campaign.objective = current.objective || null;
+        if (Object.hasOwn(current, "start_time")) campaign.start_time = current.start_time || null;
+        if (Object.hasOwn(current, "stop_time")) campaign.stop_time = current.stop_time || null;
         campaign.status = String(current.status).toUpperCase();
         campaign.effective_status =
           campaign.status === "ACTIVE"
@@ -144,6 +188,7 @@ export async function fetchCampaigns(env, fetcher = fetch) {
       }),
     );
   }
+  const campaigns = [...campaignsById.values()];
   return {
     campaigns,
     syncedAt,

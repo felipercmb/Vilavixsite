@@ -41,3 +41,25 @@ test("production campaign data requires authentication and never uses the local 
   assert.equal(result.headers["Cache-Control"], "no-store");
   assert.ok(!JSON.stringify(result).includes("test-only"));
 });
+
+test("API autenticada descobre IDs recebidos e salva metadados sem substituir regras", async () => {
+  const env = { SUPABASE_URL: "https://abcdefghijklmnopqrst.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "fixture-private", ZERNIO_API_KEY: "fixture-zernio", ZERNIO_ACCOUNT_ID: "connection", ZERNIO_AD_ACCOUNT_ID: "act_123" };
+  let writes = 0;
+  const json = (value) => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
+  const handler = campaignsMiddleware(env, { fetcher: async (url, options = {}) => {
+    const path = new URL(url).pathname;
+    if (path === "/auth/v1/user") return json({ id: "fixture-user" });
+    if (path === "/rest/v1/profiles") return json({ role: "admin", ativo: true });
+    if (path === "/rest/v1/rpc/discover_zernio_campaign_ids") return json([{ campaign_id: "101" }]);
+    if (path === "/api/v1/ads/campaigns") return json({ campaigns: [] });
+    if (path === "/api/v1/ads/campaigns/101") return json({ campaign: { id: "101", name: "Recovered", account_id: "123", status: "ACTIVE", effective_status: "ACTIVE" } });
+    assert.equal(path, "/rest/v1/rpc/sync_zernio_campaigns"); writes++;
+    const rows = JSON.parse(options.body).p_rows;
+    assert.equal(rows[0].external_id, "101");
+    assert.equal(Object.hasOwn(rows[0], "routing_configured"), false);
+    return json(1);
+  } });
+  const result = await invoke(handler, { method: "POST", headers: { authorization: "Bearer fixture-user-session" } });
+  assert.equal(result.statusCode, 200); assert.equal(result.body.active, 1); assert.equal(writes, 1);
+  assert.equal(JSON.stringify(result.body).includes(env.SUPABASE_SERVICE_ROLE_KEY), false);
+});

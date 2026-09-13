@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createCampaignSyncHandler } from "../supabase/functions/_shared/campaign-sync.js";
+import { createCampaignSyncHandler as createRawCampaignSyncHandler } from "../supabase/functions/_shared/campaign-sync.js";
 
 const env = {
   CAMPAIGN_SYNC_CRON_KEY: "fixture-only-dedicated-cron-secret-with-entropy-placeholder",
@@ -12,6 +12,14 @@ const env = {
   ZERNIO_AD_ACCOUNT_ID: "act_fixture",
 };
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
+// Existing scenarios have no additional inbound campaign IDs; discovery itself
+// is exercised separately below and in the provider discovery tests.
+function createCampaignSyncHandler(configuration, options = {}) {
+  const fetcher = options.fetcher || fetch;
+  return createRawCampaignSyncHandler(configuration, { ...options, fetcher: (url, init) =>
+    new URL(url).pathname === "/rest/v1/rpc/discover_zernio_campaign_ids" ? json([]) : fetcher(url, init),
+  });
+}
 const request = (headers = { "X-Campaign-Sync-Key": env.CAMPAIGN_SYNC_CRON_KEY }, method = "POST") => new Request("https://abcdefghijklmnopqrst.supabase.co/functions/v1/sync-zernio-campaigns", { method, headers });
 const campaign = (id, status = "paused") => ({ platformCampaignId: id, platformAdAccountId: "act_fixture", campaignName: `Campaign ${id}`, platform: "facebook", status, platformCampaignStatus: status });
 

@@ -7,7 +7,7 @@ const send = (res, status, data) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.end(JSON.stringify(data));
 };
-export function campaignsMiddleware(env, { local = false } = {}) {
+export function campaignsMiddleware(env, { local = false, fetcher = fetch } = {}) {
   let cached = null,
     pending = null;
   return async (req, res) => {
@@ -42,6 +42,7 @@ export function campaignsMiddleware(env, { local = false } = {}) {
           );
         admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
           auth: { persistSession: false, autoRefreshToken: false },
+          global: { fetch: fetcher },
         });
         const {
           data: { user },
@@ -69,13 +70,13 @@ export function campaignsMiddleware(env, { local = false } = {}) {
       }
       if (!cached || Date.now() - cached.at > 60_000 || req.method === "POST") {
         if (!pending)
-          pending = fetchCampaigns(env).finally(() => {
+          pending = fetchCampaigns(env, fetcher).finally(() => {
             pending = null;
           });
         const data = await pending;
         if (admin) {
           const metadata = data.campaigns.map(
-            ({ broker_ids, weights, routing_enabled, daily_limit, ...row }) =>
+            ({ broker_ids, weights, routing_enabled, routing_configured, daily_limit, ...row }) =>
               row,
           );
           // Transaction preserves routing rules and marks disappeared campaigns inactive.

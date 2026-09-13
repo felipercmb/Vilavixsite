@@ -47,7 +47,7 @@ export function createCampaignSyncHandler(env, { fetcher = fetch, timeoutMs = 90
         stage = "provider";
         // All pages and active-status confirmations finish before the only write.
         const snapshot = await fetchCampaigns(env, timedFetch);
-        const metadata = snapshot.campaigns.map(({ broker_ids, weights, routing_enabled, daily_limit, ...row }) => row);
+        const metadata = snapshot.campaigns.map(({ broker_ids, weights, routing_enabled, routing_configured, daily_limit, ...row }) => row);
         if (controller.signal.aborted) throw new Error("Sync deadline exceeded");
         stage = "database";
         const stored = await timedFetch(new URL("/rest/v1/rpc/sync_zernio_campaigns", projectUrl), {
