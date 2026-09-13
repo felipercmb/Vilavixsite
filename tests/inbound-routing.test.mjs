@@ -11,7 +11,7 @@ const readMigration = (name) => readFile(new URL(`../supabase/migrations/${name}
 test("inbound bridge preserves legacy until explicit configuration and routes configured campaigns before notification", async () => {
   const db = new PGlite();
   try {
-    await db.exec("CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role;CREATE SCHEMA auth;CREATE TABLE auth.users(id uuid PRIMARY KEY,email text,raw_user_meta_data jsonb);CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT NULLIF(current_setting('test.uid',true),'')::uuid$$;");
+    await db.exec("CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role;CREATE SCHEMA auth;CREATE TABLE auth.users(id uuid PRIMARY KEY,email text,raw_user_meta_data jsonb);CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT NULLIF(current_setting('test.uid',true),'')::uuid$$;CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$SELECT NULLIF(current_setting('request.jwt.claim.role',true),'')$$;");
     await db.exec((await readFile(new URL("../supabase_schema.sql", import.meta.url), "utf8")).split("-- STORAGE BUCKET")[0]);
     await db.exec(await readMigration("20260912181000_campaign_routing.sql"));
     await db.exec(`
@@ -138,6 +138,48 @@ test("inbound bridge preserves legacy until explicit configuration and routes co
     const staleForm = await addLead("Stale form history", { campanha: "Aluguel Formulario v1" });
     assert.equal(staleForm.corretor, "Legacy broker");
     assert.equal(staleForm.campaign_id, null, "stale form history does not guess a campaign");
+
+    // Reproduce production ownership RLS: a broker can edit their own lead, so
+    // the trigger must independently reject forged quota/accounting fields.
+    const owned = await addLead("Owned lead without assignment audit", { corretor: "Broker A" });
+    await db.exec(`
+      GRANT USAGE ON SCHEMA auth TO authenticated,service_role;
+      GRANT SELECT,UPDATE ON leads TO authenticated,service_role;
+      GRANT SELECT ON profiles TO authenticated;
+      ALTER ROLE service_role BYPASSRLS;
+      DROP POLICY "Leads logado" ON leads;
+      CREATE POLICY leads_select ON leads FOR SELECT TO authenticated
+        USING(is_crm_admin() OR corretor=(SELECT nome FROM profiles WHERE id=auth.uid()));
+      CREATE POLICY leads_update ON leads FOR UPDATE TO authenticated
+        USING(is_crm_admin() OR corretor=(SELECT nome FROM profiles WHERE id=auth.uid()))
+        WITH CHECK(is_crm_admin() OR corretor=(SELECT nome FROM profiles WHERE id=auth.uid()));
+    `);
+    const beforeForgery = (await db.query("SELECT * FROM campaign_routing_candidates($1)", [campaign.id])).rows;
+    await db.query("SELECT set_config('test.uid',$1,false),set_config('request.jwt.claim.role','authenticated',false)", [brokerA]);
+    await db.exec("SET ROLE authenticated");
+    assert.equal((await db.query("UPDATE leads SET status='contato',notas='Retorno combinado' WHERE id=$1 RETURNING id", [owned.id])).rows.length, 1, "normal owned-lead work remains allowed");
+    await assert.rejects(db.query("UPDATE leads SET campaign_id=$1,corretor_id=$2,routing_source='campaign',routing_status='assigned',routing_assigned_at=now() WHERE id=$3", [campaign.id, brokerB, owned.id]), /Somente administradores/, "a broker cannot create synthetic quota for another broker while retaining their own owner name");
+    for (const [column, value] of [
+      ["campaign_id", campaign.id], ["corretor_id", brokerB], ["corretor", "Broker B"],
+      ["routing_source", "campaign"], ["routing_status", "assigned"],
+      ["routing_reason", "forged"], ["routing_campaign_reference", "forged"],
+      ["routing_assigned_at", new Date().toISOString()],
+    ]) {
+      await assert.rejects(db.query(`UPDATE leads SET ${column}=$1 WHERE id=$2`, [value, owned.id]), /Somente administradores/, `${column} cannot be forged on an owned lead`);
+    }
+    await db.exec("RESET ROLE");
+    assert.deepEqual((await db.query("SELECT * FROM campaign_routing_candidates($1)", [campaign.id])).rows, beforeForgery, "failed forgeries leave quota and routing order unchanged");
+    await db.query("SELECT set_config('test.uid',$1,false)", [admin]);
+    await db.exec("SET ROLE authenticated");
+    assert.equal((await db.query("UPDATE leads SET routing_reason='Approved correction' WHERE id=$1 RETURNING id", [owned.id])).rows.length, 1, "an authenticated active admin can correct routing fields");
+    await db.exec("RESET ROLE");
+    await db.query("SELECT set_config('test.uid','',false),set_config('request.jwt.claim.role','service_role',false)");
+    await db.exec("SET ROLE service_role");
+    assert.equal((await db.query("UPDATE leads SET routing_reason='Server correction' WHERE id=$1 RETURNING id", [owned.id])).rows.length, 1, "the trusted service role remains able to maintain routing fields");
+    await db.exec("RESET ROLE");
+    await db.query("SELECT set_config('request.jwt.claim.role','',false)");
+    assert.equal((await db.query("UPDATE leads SET routing_reason='Operator correction' WHERE id=$1 RETURNING id", [owned.id])).rows.length, 1, "the postgres operator is allowed without JWT claims");
+    assert.equal((await db.query("SELECT prosecdef FROM pg_proc WHERE oid='guard_lead_routing_update()'::regprocedure")).rows[0].prosecdef, false, "caller checks cannot run under the trigger owner's identity");
     const privileges = (await db.query("SELECT has_function_privilege('authenticated','campaign_routing_candidates(text)','EXECUTE') AS candidates,has_function_privilege('service_role','campaign_routing_candidates(text)','EXECUTE') AS service_candidates,has_function_privilege('authenticated','route_lead(bigint,text)','EXECUTE') AS route")).rows[0];
     assert.deepEqual(privileges, { candidates: false, service_candidates: false, route: true });
   } finally { await db.close(); }

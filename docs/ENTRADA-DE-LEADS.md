@@ -12,6 +12,8 @@ A migração `20260912200000_inbound_campaign_bridge.sql` conecta a roleta por c
 
 Um responsável informado explicitamente no cadastro continua sendo tratado como atribuição manual. A integração não redistribui os leads existentes, não altera campanhas na Meta e não cria disparos adicionais de WhatsApp.
 
+Nas edições, `leads_guard_routing_update` protege o responsável, a identidade da campanha e os campos de controle da distribuição. Corretores continuam editando status, notas e demais dados permitidos de seus próprios leads; somente administradores ativos, o servidor com service role e o operador postgres alteram os campos protegidos. O gatilho usa a identidade de quem executa a atualização, impedindo que um corretor forje uma atribuição para manipular a cota diária.
+
 ## Leads aguardando revisão
 
 Depois de configuradas, campanhas pausadas, desatualizadas, fora do período, desabilitadas ou sem participantes disponíveis não distribuem automaticamente. O contato é salvo com `routing_status='pending'` e a explicação em `routing_reason`, mantendo o nome recebido em `routing_campaign_reference`. Essas entradas não passam pelo fallback legado. Desabilitar uma regra já configurada é uma suspensão explícita; não volta à distribuição antiga.

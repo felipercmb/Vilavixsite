@@ -150,6 +150,29 @@ REVOKE ALL ON FUNCTION public.assign_lead_campaign_on_insert() FROM PUBLIC,anon,
 CREATE OR REPLACE TRIGGER leads_00_campaign_route
  BEFORE INSERT ON public.leads FOR EACH ROW EXECUTE FUNCTION public.assign_lead_campaign_on_insert();
 
+-- Ownership RLS limits which lead a broker can edit, not which fields. Protect
+-- routing identity and accounting even on an otherwise editable owned lead.
+-- Keep this SECURITY INVOKER so current_user is the caller, never its owner.
+CREATE OR REPLACE FUNCTION public.guard_lead_routing_update()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path=public AS $$
+BEGIN
+ IF ROW(NEW.campaign_id,NEW.corretor_id,NEW.corretor,NEW.routing_source,NEW.routing_status,
+        NEW.routing_reason,NEW.routing_campaign_reference,NEW.routing_assigned_at)
+  IS DISTINCT FROM
+    ROW(OLD.campaign_id,OLD.corretor_id,OLD.corretor,OLD.routing_source,OLD.routing_status,
+        OLD.routing_reason,OLD.routing_campaign_reference,OLD.routing_assigned_at)
+ THEN
+  IF current_user='postgres' OR COALESCE(auth.role(),'')='service_role' THEN RETURN NEW; END IF;
+  IF NOT public.is_crm_admin() THEN
+   RAISE EXCEPTION 'Somente administradores podem alterar o responsável e os dados de distribuição.' USING ERRCODE='42501';
+  END IF;
+ END IF;
+ RETURN NEW;
+END;$$;
+REVOKE ALL ON FUNCTION public.guard_lead_routing_update() FROM PUBLIC,anon,authenticated,service_role;
+CREATE OR REPLACE TRIGGER leads_guard_routing_update
+ BEFORE UPDATE ON public.leads FOR EACH ROW EXECUTE FUNCTION public.guard_lead_routing_update();
+
 -- Retain the real legacy function (rules/configuration) and invoke it only for leads
 -- outside campaign routing. Do not replace its body or its notification counterpart.
 DO $$
