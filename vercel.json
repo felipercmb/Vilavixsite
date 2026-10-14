@@ -2,6 +2,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/privacidade", "destination": "/privacidade.html" },
     { "source": "/aluguel", "destination": "/index.html" },
     { "source": "/imoveis", "destination": "/index.html" },
     { "source": "/imovel/:path*", "destination": "/index.html" },

@@ -81,14 +81,7 @@ export default function Footer({ navigate }) {
             © {new Date().getFullYear()} VilaVix Imóveis. CRECI-ES{" "}
             {CONTACT.creci}.
           </p>
-          <a
-            href="/contato?assunto=privacidade"
-            onClick={(e) =>
-              goLink(e, navigate, "contato", {
-                filters: { assunto: "privacidade" },
-              })
-            }
-          >
+          <a href="/privacidade">
             Privacidade e seus dados
           </a>
           <a href="/login" onClick={(e) => goLink(e, navigate, "login")}>
