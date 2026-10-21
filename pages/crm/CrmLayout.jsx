@@ -12,7 +12,7 @@ const AlugueisCRM = lazy(() => import("./AlugueisCRM.jsx"));
 import { createRentalRepository } from "../../lib/rentals.js";
 import * as db from "../../lib/db.js";
 import { filterPortfolio } from "../../lib/broker-workflow.js";
-import { leadCollection } from "../../lib/lead-collections.js";
+import { leadCollection, leadCollectionChange } from "../../lib/lead-collections.js";
 import { normalizeProperty } from "../../lib/property.js";
 import { createCrmResourceLoader, crmResourcePlan, CRM_RESOURCE_LABELS } from "../../lib/crm-resources.js";
 import { createCrmTaskCache } from "../../lib/crm-task-cache.js";
@@ -443,6 +443,8 @@ export default function CrmLayout({
         : {}),
     };
     const payload = leadPayload(next);
+    // An unrelated edit must not overwrite another operator's saved collection.
+    if (!Object.hasOwn(changes, "carteira")) delete payload.carteira;
     const data = await persist(() =>
       demo ? { data: next } : db.updateLead(id, payload),
     );
@@ -476,6 +478,15 @@ export default function CrmLayout({
     );
     const row = demo ? data : mapLead(data);
     setLeads((prev) => [row, ...prev]);
+    return row;
+  };
+  const moveLeadCollection = async (id, collection) => {
+    const old = leads.find(lead => String(lead.id) === String(id));
+    if (!old) throw new Error("Lead não encontrado.");
+    const changes = leadCollectionChange(collection);
+    const data = await persist(() => demo ? { data: { ...old, ...changes } } : db.updateLead(id, changes));
+    const row = demo ? data : mapLead(data);
+    setLeads(previous => previous.map(lead => String(lead.id) === String(id) ? row : lead));
     return row;
   };
   const deleteLead = async (id) => {
@@ -620,6 +631,7 @@ export default function CrmLayout({
     currentProfile,
     loading,
     updateLead,
+    moveLeadCollection,
     addLead,
     deleteLead,
     toggleTask,

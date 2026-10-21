@@ -6,6 +6,10 @@
 .crm-lead-collections .crm-tabs button.active span{background:#fff2;color:inherit}
 .crm-lead-collections p{margin:10px 0 0;font-size:12px;line-height:1.6;color:#566574}
 .crm-dialog-heading-content{min-width:0;flex:1}
+.crm-lead-collection-control{margin-bottom:22px}
+.crm-lead-collection-control .crm-field{max-width:320px}
+.crm-lead-collection-control>p{font-size:12px;line-height:1.6;color:#566574;margin:8px 0 0}
+.crm-lead-collection-control>p.crm-confirmed-note{color:#356047;margin-top:10px}
 .crm-dialog-with-navigation .crm-dialog-heading{position:sticky;top:0;z-index:2;background:#fff}
 .crm-contact-navigation{display:flex;align-items:center;gap:12px;margin-top:16px;max-width:370px}
 .crm-contact-navigation .crm-btn{min-height:44px;white-space:nowrap}

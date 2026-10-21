@@ -1,9 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { leadCollection, filterLeadCollection, contactNavigation } from "../lib/lead-collections.js";
+import { leadCollection, filterLeadCollection, contactNavigation, leadCollectionChange } from "../lib/lead-collections.js";
+import { dbToLead, leadToDb } from "../lib/mappers.js";
 import { buildPipelineModel } from "../lib/pipeline-model.js";
 
 const historicalNote = "Importado da planilha de leads da VilaVix. Campanha: [Bella Fiore].";
+
+test("escolha manual vence a procedência nos dois sentidos e sobrevive ao mapeamento do banco", () => {
+  const historic = { id: 1, notas: historicalNote, status: "atendimento", corretor: "Corretor A" };
+  const toEntries = { ...historic, ...leadCollectionChange("entrada") };
+  assert.equal(leadCollection(dbToLead(leadToDb(toEntries))), "entrada");
+  const toProspects = { ...toEntries, notas: "Observações alteradas", ...leadCollectionChange("prospeccao") };
+  assert.equal(leadCollection(dbToLead(leadToDb(toProspects))), "prospeccao");
+  assert.equal(leadCollection({ ...historic, carteira: null }), "prospeccao");
+  assert.equal(leadCollection({ ...historic, carteira: "inválida" }), "prospeccao");
+});
+
+test("mudança manual envia apenas a carteira e rejeita valores que não são carteiras", () => {
+  assert.deepEqual(leadCollectionChange("entrada"), { carteira: "entrada" });
+  assert.deepEqual(leadCollectionChange("prospeccao"), { carteira: "prospeccao" });
+  for (const value of ["all", "__proto__", "novo", "", null]) assert.throws(() => leadCollectionChange(value), /Escolha/);
+  assert.equal(Object.hasOwn(leadToDb({ nome: "Importação automática" }), "carteira"), false);
+});
 
 test("prospecção segue a importação histórica, sem confundir idade, origem, remarketing ou etapa", () => {
   const entries = [

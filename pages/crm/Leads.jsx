@@ -32,13 +32,13 @@ import {
   exportRows,
 } from "./CRMUI.jsx";
 import { filterPortfolio, isOpenLead, leadNeedsFollowup, nextLeadTask, searchProperties, saveLeadInteraction } from "../../lib/broker-workflow.js";
-import { contactNavigation, filterLeadCollection, leadCollection } from "../../lib/lead-collections.js";
+import { contactNavigation, filterLeadCollection, leadCollection, LEAD_COLLECTION_LABELS } from "../../lib/lead-collections.js";
 import LeadCollectionTabs from "./LeadCollectionTabs.jsx";
 import "../../styles/crm-workflows.css";
 
 function LeadForm({ lead, imoveis, corretoresList, onSave, onClose }) {
   const [form, setForm] = useState(
-    lead || {
+    lead ? { ...lead, carteira: leadCollection(lead) } : {
       nome: "",
       email: "",
       telefone: "",
@@ -50,6 +50,7 @@ function LeadForm({ lead, imoveis, corretoresList, onSave, onClose }) {
       interesse: "",
       orcamento: "",
       notas: "",
+      carteira: "entrada",
       data: today(),
     },
   );
@@ -161,6 +162,11 @@ function LeadForm({ lead, imoveis, corretoresList, onSave, onClose }) {
                 ))}
               </select>
             </Field>
+            <Field label="Carteira do lead">
+              <select value={form.carteira} onChange={event => set("carteira", event.target.value)}>
+                {Object.entries(LEAD_COLLECTION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </Field>
             <Field label="Responsável">
               <select
                 value={
@@ -244,10 +250,11 @@ function LeadForm({ lead, imoveis, corretoresList, onSave, onClose }) {
     </Dialog>
   );
 }
-function LeadDetail({ lead, comments, tasks, corretoresList, onClose, onEdit, onDelete, updateLead, addComment, addTask, toggleTask, navigation, onNavigate }) {
+function LeadDetail({ lead, comments, tasks, corretoresList, onClose, onEdit, onDelete, updateLead, moveLeadCollection, addComment, addTask, toggleTask, navigation, onNavigate }) {
   const [note, setNote] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false), [confirmDelete, setConfirmDelete] = useState(false);
   const [scheduleReturn, setScheduleReturn] = useState(true), [progress, setProgress] = useState({}), [savedMessage, setSavedMessage] = useState("");
   const [pendingNavigation, setPendingNavigation] = useState(null);
+  const [collectionNotice, setCollectionNotice] = useState("");
   const [task, setTask] = useState({ titulo: `Retornar contato de ${lead.nome.split(" ")[0]}`, data: today(), hora: "09:00", tipo: "ligacao" });
   const run = async (fn) => { setError(""); setBusy(true); try { await fn(); } catch (err) { setError(err.message); } finally { setBusy(false); } };
   const relatedTasks = tasks.filter((t) => String(t.leadId) === String(lead.id)).sort((a, b) => `${a.concluida ? 1 : 0}${a.data}${a.hora}`.localeCompare(`${b.concluida ? 1 : 0}${b.data}${b.hora}`));
@@ -265,6 +272,15 @@ function LeadDetail({ lead, comments, tasks, corretoresList, onClose, onEdit, on
   return <Dialog title={lead.nome} subtitle={`${leadCollection(lead) === "prospeccao" ? "Prospecção" : "Lead de entrada"} · ${lead.origem || "Origem não informada"} · Cadastro em ${date(lead.data)}`} onClose={onClose} wide navigation={contactControls}>
     <div className="crm-dialog-body">
       <Alert>{error}</Alert>
+      <div className="crm-lead-collection-control">
+        <Field label="Carteira do lead"><select value={leadCollection(lead)} disabled={busy} onChange={event => {
+          const collection = event.target.value;
+          setCollectionNotice("");
+          run(async () => { await moveLeadCollection(lead.id, collection); setCollectionNotice(`Contato movido para ${LEAD_COLLECTION_LABELS[collection]}.`); });
+        }}>{Object.entries(LEAD_COLLECTION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
+        <p>{busy ? "Salvando alteração…" : "A mudança é salva automaticamente. O contato aparece na carteira escolhida."}</p>
+        {collectionNotice && <p className="crm-confirmed-note" role="status">{collectionNotice}</p>}
+      </div>
       {pendingNavigation && <div className="crm-navigation-warning" role="alert">
         <p>{progress.comment ? "A anotação foi salva, mas o retorno ainda não foi agendado." : "Há uma anotação que ainda não foi salva neste contato."}</p>
         <div className="crm-actions"><button type="button" className="crm-btn" onClick={() => setPendingNavigation(null)}>Continuar editando</button><button type="button" className="crm-btn" onClick={() => onNavigate(pendingNavigation)}>{progress.comment ? "Avançar sem agendar" : "Descartar rascunho e avançar"}</button></div>
