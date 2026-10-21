@@ -13,6 +13,7 @@ import { createRentalRepository } from "../../lib/rentals.js";
 import * as db from "../../lib/db.js";
 import { filterPortfolio } from "../../lib/broker-workflow.js";
 import { leadCollection, leadCollectionChange } from "../../lib/lead-collections.js";
+import { moveLeadCollections, selectedLeadIds } from "../../lib/bulk-lead-collections.js";
 import { normalizeProperty } from "../../lib/property.js";
 import { createCrmResourceLoader, crmResourcePlan, CRM_RESOURCE_LABELS } from "../../lib/crm-resources.js";
 import { createCrmTaskCache } from "../../lib/crm-task-cache.js";
@@ -489,6 +490,21 @@ export default function CrmLayout({
     setLeads(previous => previous.map(lead => String(lead.id) === String(id) ? row : lead));
     return row;
   };
+  const moveLeadCollectionsBulk = async (ids, collection) => {
+    if (!demo && !user?.id) throw new Error("Sua sessão expirou. Entre novamente para salvar.");
+    const allowedIds = selectedLeadIds(ids, leads);
+    if (!allowedIds.length || allowedIds.length !== new Set(ids.map(String)).size)
+      throw new Error("A seleção mudou. Atualize os contatos e selecione novamente.");
+    return moveLeadCollections(allowedIds, collection,
+      (batch, changes) => demo
+        ? Promise.resolve({ data: batch.map(id => ({ id, ...changes })) })
+        : db.updateLeadCollections(batch, changes),
+      (confirmedIds, changes) => {
+        const confirmed = new Set(confirmedIds);
+        setLeads(previous => previous.map(lead => confirmed.has(String(lead.id)) ? { ...lead, ...changes } : lead));
+      },
+    );
+  };
   const deleteLead = async (id) => {
     await persist(() => (demo ? { data: true } : db.deleteLead(id)));
     setLeads((prev) => prev.filter((l) => String(l.id) !== String(id)));
@@ -632,6 +648,7 @@ export default function CrmLayout({
     loading,
     updateLead,
     moveLeadCollection,
+    moveLeadCollectionsBulk,
     addLead,
     deleteLead,
     toggleTask,

@@ -35,6 +35,8 @@ test("migração preserva contatos e permissões; troca de carteira persiste sem
     assert.equal(leadCollection(dbToLead(readBack)), "entrada");
     assert.deepEqual({ ...readBack, carteira: null }, before);
     assert.equal((await db.query("UPDATE leads SET carteira='entrada' WHERE id=2 RETURNING id")).rows.length, 0);
+    // The same RLS rule applies to bulk PATCHes: only the broker's row returns.
+    assert.deepEqual((await db.query("UPDATE leads SET carteira='prospeccao' WHERE id IN (1,2) RETURNING id,carteira")).rows, [{ id: 1, carteira: "prospeccao" }]);
     await assert.rejects(db.exec("UPDATE leads SET carteira='all' WHERE id=1"), /leads_carteira_check/);
     await db.exec("UPDATE leads SET carteira='prospeccao' WHERE id=1;");
     assert.equal(leadCollection(dbToLead((await db.query("SELECT * FROM leads WHERE id=1")).rows[0])), "prospeccao");

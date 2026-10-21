@@ -1,4 +1,20 @@
 .crm-scope-bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:0 0 16px}
+.crm-lead-list-controls{border:0;padding:0;margin:0;min-width:0}
+.crm-lead-bulk{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:18px;padding:16px 18px;margin-bottom:16px;border:1px solid #ded5d8;border-radius:16px;background:#fcf9fa}
+.crm-lead-bulk-selection{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;font-size:12px;color:#536274}
+.crm-lead-bulk-selection strong{color:#354859;font-size:13px;font-variant-numeric:tabular-nums}
+.crm-lead-bulk-selection .crm-link{min-height:44px;text-align:left;text-decoration:underline;text-underline-offset:3px}
+.crm-lead-bulk-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+.crm-lead-bulk-actions label{display:flex;align-items:center;gap:10px;font-size:12px;color:#536274}
+.crm-lead-bulk-actions select{min-height:44px;border:1px solid #d4dce3;border-radius:12px;padding:9px 30px 9px 12px;font:inherit;color:#354859;background:#fff}
+.crm-lead-bulk-actions .crm-btn{min-height:44px}
+.crm-table .crm-lead-selection-cell{width:48px;padding:4px 2px 4px 8px}
+.crm-lead-checkbox{display:flex;align-items:center;justify-content:center;width:44px;min-height:44px;cursor:pointer}
+.crm-lead-checkbox input{width:18px;height:18px;margin:0;accent-color:#94283c;cursor:pointer}
+.crm-lead-checkbox:has(input:focus-visible){outline:2px solid #94283c;outline-offset:-3px;border-radius:10px}
+.crm-table tbody tr.crm-lead-selected{background:#faf0f3}
+.crm-bulk-error{border:1px solid #e2c78f;background:#fff9ed;color:#78531c;border-radius:12px;padding:14px;font-size:13px;line-height:1.6}
+@media(max-width:700px){.crm-lead-bulk{padding:14px;gap:12px}.crm-lead-bulk-actions{width:100%}.crm-lead-bulk-actions label{flex:1 1 100%;min-width:0}.crm-lead-bulk-actions select{flex:1;min-width:0}.crm-lead-bulk-actions .crm-btn{flex:1;white-space:nowrap}.crm-lead-bulk-selection{gap:4px 12px}}
 .crm-lead-collections{margin:0 0 22px}
 .crm-lead-collections .crm-tabs{display:flex;flex-wrap:wrap;gap:4px;width:fit-content;margin:0}
 .crm-lead-collections .crm-tabs button{display:flex;align-items:center;gap:9px;min-height:44px}

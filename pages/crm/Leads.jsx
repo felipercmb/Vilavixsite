@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
   Download,
@@ -34,7 +34,14 @@ import {
 import { filterPortfolio, isOpenLead, leadNeedsFollowup, nextLeadTask, searchProperties, saveLeadInteraction } from "../../lib/broker-workflow.js";
 import { contactNavigation, filterLeadCollection, leadCollection, LEAD_COLLECTION_LABELS } from "../../lib/lead-collections.js";
 import LeadCollectionTabs from "./LeadCollectionTabs.jsx";
+import { selectedLeadIds, toggleLeadSelection } from "../../lib/bulk-lead-collections.js";
 import "../../styles/crm-workflows.css";
+
+function LeadSelectionCheckbox({ checked, mixed = false, label, disabled, onChange }) {
+  const input = useRef(null);
+  useEffect(() => { if (input.current) input.current.indeterminate = mixed; }, [mixed]);
+  return <label className="crm-lead-checkbox"><input ref={input} type="checkbox" aria-label={label} checked={checked} disabled={disabled} onChange={event => onChange(event.target.checked)} /></label>;
+}
 
 function LeadForm({ lead, imoveis, corretoresList, onSave, onClose }) {
   const [form, setForm] = useState(
@@ -322,6 +329,10 @@ function LeadDetail({ lead, comments, tasks, corretoresList, onClose, onEdit, on
 export default function Leads(props) {
   const { leads, tasks = [], corretoresList, focusLeadId, setFocusLeadId, currentProfile, portfolioScope = "all", setPortfolioScope, leadQueueFilter, setLeadQueueFilter, leadCollectionFilter = "entrada", setLeadCollectionFilter } = props;
   const [needsReturn, setNeedsReturn] = useState(false);
+  const [checkedIds, setCheckedIds] = useState([]);
+  const [bulkDestination, setBulkDestination] = useState("prospeccao");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkReport, setBulkReport] = useState(null);
   const [q, setQ] = useState(""),
     [stage, setStage] = useState(""),
     [broker, setBroker] = useState(""),
@@ -337,6 +348,10 @@ export default function Leads(props) {
     setLeadQueueFilter?.(null);
   }, [leadQueueFilter, setLeadQueueFilter]);
   useEffect(() => setPage(1), [q, stage, broker, origin, needsReturn, portfolioScope, leadCollectionFilter]);
+  useEffect(() => {
+    setCheckedIds([]);
+    setBulkDestination(leadCollectionFilter === "prospeccao" ? "entrada" : "prospeccao");
+  }, [q, stage, broker, origin, needsReturn, portfolioScope, leadCollectionFilter]);
   const portfolio = useMemo(() => filterPortfolio(leads, portfolioScope, currentProfile), [leads, portfolioScope, currentProfile]);
   const collectionLeads = useMemo(() => filterLeadCollection(portfolio, leadCollectionFilter), [portfolio, leadCollectionFilter]);
   const filtered = useMemo(
@@ -372,6 +387,27 @@ export default function Leads(props) {
     (currentPage - 1) * perPage,
     currentPage * perPage,
   );
+  const checked = selectedLeadIds(checkedIds, filtered);
+  const checkedSet = new Set(checked);
+  const pageCheckedCount = visible.filter(lead => checkedSet.has(String(lead.id))).length;
+  const moveChecked = async () => {
+    if (bulkBusy || !checked.length) return;
+    const snapshot = [...checked];
+    const destination = bulkDestination;
+    setBulkBusy(true);
+    setBulkReport(null);
+    try {
+      const result = await props.moveLeadCollectionsBulk(snapshot, destination);
+      setCheckedIds(result.unconfirmedIds);
+      const count = result.confirmedIds.length;
+      const pending = result.unconfirmedIds.length;
+      setBulkReport({ error: pending > 0, text: pending
+        ? `${count} de ${snapshot.length} contatos movidos para ${LEAD_COLLECTION_LABELS[destination]}. ${pending} sem confirmação continuam selecionados. Confira suas permissões ou tente novamente. Se a conexão caiu, atualize a lista para conferir o que foi salvo.`
+        : `${count} contato${count === 1 ? " movido" : "s movidos"} para ${LEAD_COLLECTION_LABELS[destination]}.` });
+    } catch (err) {
+      setBulkReport({ error: true, text: err.message || "Não foi possível mover os contatos. A seleção foi mantida para tentar novamente." });
+    } finally { setBulkBusy(false); }
+  };
   return (
     <>
       <PageHeader
@@ -414,12 +450,14 @@ export default function Leads(props) {
         </button>
         <button
           className="crm-btn crm-btn-primary"
+          disabled={bulkBusy}
           onClick={() => setCreating(true)}
         >
           <Plus size={16} />
           Novo lead
         </button>
       </PageHeader>
+      <fieldset className="crm-lead-list-controls" disabled={bulkBusy}>
       <LeadCollectionTabs leads={portfolio} value={leadCollectionFilter} onChange={value => { setLeadCollectionFilter(value); setStage(""); setPage(1); }} />
       <div className="crm-scope-bar">
         {setPortfolioScope && <div className="crm-tabs">{[["all", "Todos os contatos"], ["mine", "Minha carteira"], ["unassigned", "Sem responsável"]].map(([value, label]) => <button key={value} className={portfolioScope === value ? "active" : ""} onClick={() => { setPortfolioScope(value); setBroker(""); }}>{label}</button>)}</div>}
@@ -475,6 +513,21 @@ export default function Leads(props) {
           {filtered.length} contato{filtered.length !== 1 ? "s" : ""}
         </span>
       </div>
+      </fieldset>
+      {bulkReport && <p className={bulkReport.error ? "crm-bulk-error" : "crm-confirmed-note"} role={bulkReport.error ? "alert" : "status"}>{bulkReport.text}</p>}
+      {filtered.length > 0 && <div className="crm-lead-bulk" aria-label="Movimentação de contatos em lote" aria-busy={bulkBusy}>
+        <div className="crm-lead-bulk-selection">
+          <strong>{checked.length ? `${checked.length} selecionado${checked.length === 1 ? "" : "s"}` : "Mover vários contatos"}</strong>
+          {checked.length ? <>
+            {checked.length < filtered.length && <button className="crm-link" disabled={bulkBusy} onClick={() => setCheckedIds(filtered.map(lead => String(lead.id)))}>Selecionar os {filtered.length} resultados filtrados</button>}
+            <button className="crm-link" disabled={bulkBusy} onClick={() => setCheckedIds([])}>Limpar seleção</button>
+          </> : <span>Marque os contatos na lista para mudar a carteira.</span>}
+        </div>
+        {checked.length > 0 && <div className="crm-lead-bulk-actions">
+          <label>Mover para<select aria-label="Carteira de destino" value={bulkDestination} disabled={bulkBusy} onChange={event => setBulkDestination(event.target.value)}>{Object.entries(LEAD_COLLECTION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <button className="crm-btn crm-btn-primary" disabled={bulkBusy} onClick={moveChecked}>{bulkBusy ? "Movendo…" : `Mover ${checked.length} contato${checked.length === 1 ? "" : "s"}`}</button>
+        </div>}
+      </div>}
       <div className="crm-card">
         {visible.length ? (
           <>
@@ -482,6 +535,7 @@ export default function Leads(props) {
               <table className="crm-table">
                 <thead>
                   <tr>
+                    <th className="crm-lead-selection-cell"><LeadSelectionCheckbox label="Selecionar contatos desta página" checked={pageCheckedCount === visible.length} mixed={pageCheckedCount > 0 && pageCheckedCount < visible.length} disabled={bulkBusy} onChange={value => setCheckedIds(previous => toggleLeadSelection(selectedLeadIds(previous, filtered), visible.map(lead => lead.id), value))} /></th>
                     {[
                       "Contato",
                       "Interesse",
@@ -497,13 +551,15 @@ export default function Leads(props) {
                 </thead>
                 <tbody>
                   {visible.map((l) => (
-                    <tr key={l.id}>
+                    <tr key={l.id} className={checkedSet.has(String(l.id)) ? "crm-lead-selected" : undefined}>
+                      <td className="crm-lead-selection-cell"><LeadSelectionCheckbox label={`Selecionar ${l.nome}`} checked={checkedSet.has(String(l.id))} disabled={bulkBusy} onChange={value => setCheckedIds(previous => toggleLeadSelection(selectedLeadIds(previous, filtered), [l.id], value))} /></td>
                       <td>
                         <div className="crm-person">
                           <Avatar name={l.nome} />
                           <div>
                             <button
                               className="crm-link"
+                              disabled={bulkBusy}
                               onClick={() => openContact(l.id)}
                             >
                               {l.nome}
@@ -533,10 +589,11 @@ export default function Leads(props) {
                         )}
                       </td>
                       <td>{l.origem || "—"}</td>
-                      <td>{(() => { const next = nextLeadTask(l, tasks); return next ? <div className={`crm-next-task ${next.data < today() ? "overdue" : ""}`}><span>{next.titulo}</span><small>{date(next.data)} · {next.hora?.slice(0, 5) || "Sem horário"}{next.data < today() && " · Em atraso"}</small></div> : <button className="crm-link crm-next-task missing" onClick={() => openContact(l.id)}>{isOpenLead(l) ? "Agendar retorno" : "Atendimento encerrado"}</button>; })()}</td>
+                      <td>{(() => { const next = nextLeadTask(l, tasks); return next ? <div className={`crm-next-task ${next.data < today() ? "overdue" : ""}`}><span>{next.titulo}</span><small>{date(next.data)} · {next.hora?.slice(0, 5) || "Sem horário"}{next.data < today() && " · Em atraso"}</small></div> : <button className="crm-link crm-next-task missing" disabled={bulkBusy} onClick={() => openContact(l.id)}>{isOpenLead(l) ? "Agendar retorno" : "Atendimento encerrado"}</button>; })()}</td>
                       <td>
                         <button
                           className="crm-icon-btn"
+                          disabled={bulkBusy}
                           aria-label={`Abrir ${l.nome}`}
                           onClick={() => openContact(l.id)}
                         >
@@ -557,7 +614,7 @@ export default function Leads(props) {
               <div className="crm-actions">
                 <button
                   className="crm-btn crm-btn-small"
-                  disabled={currentPage === 1}
+                  disabled={bulkBusy || currentPage === 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
                   Anterior
@@ -567,7 +624,7 @@ export default function Leads(props) {
                 </span>
                 <button
                   className="crm-btn crm-btn-small"
-                  disabled={currentPage >= maxPage}
+                  disabled={bulkBusy || currentPage >= maxPage}
                   onClick={() => setPage(currentPage + 1)}
                 >
                   Próxima
@@ -590,6 +647,7 @@ export default function Leads(props) {
           >
             <button
               className="crm-btn"
+              disabled={bulkBusy}
               onClick={() => {
                 if (leads.length) {
                   setQ("");
