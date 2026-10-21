@@ -11,6 +11,8 @@ import {
   CalendarPlus,
   Clock,
   Check,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   PageHeader,
@@ -30,6 +32,8 @@ import {
   exportRows,
 } from "./CRMUI.jsx";
 import { filterPortfolio, isOpenLead, leadNeedsFollowup, nextLeadTask, searchProperties, saveLeadInteraction } from "../../lib/broker-workflow.js";
+import { contactNavigation, filterLeadCollection, leadCollection } from "../../lib/lead-collections.js";
+import LeadCollectionTabs from "./LeadCollectionTabs.jsx";
 import "../../styles/crm-workflows.css";
 
 function LeadForm({ lead, imoveis, corretoresList, onSave, onClose }) {
@@ -240,16 +244,31 @@ function LeadForm({ lead, imoveis, corretoresList, onSave, onClose }) {
     </Dialog>
   );
 }
-function LeadDetail({ lead, comments, tasks, corretoresList, onClose, onEdit, onDelete, updateLead, addComment, addTask, toggleTask }) {
+function LeadDetail({ lead, comments, tasks, corretoresList, onClose, onEdit, onDelete, updateLead, addComment, addTask, toggleTask, navigation, onNavigate }) {
   const [note, setNote] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false), [confirmDelete, setConfirmDelete] = useState(false);
   const [scheduleReturn, setScheduleReturn] = useState(true), [progress, setProgress] = useState({}), [savedMessage, setSavedMessage] = useState("");
+  const [pendingNavigation, setPendingNavigation] = useState(null);
   const [task, setTask] = useState({ titulo: `Retornar contato de ${lead.nome.split(" ")[0]}`, data: today(), hora: "09:00", tipo: "ligacao" });
   const run = async (fn) => { setError(""); setBusy(true); try { await fn(); } catch (err) { setError(err.message); } finally { setBusy(false); } };
   const relatedTasks = tasks.filter((t) => String(t.leadId) === String(lead.id)).sort((a, b) => `${a.concluida ? 1 : 0}${a.data}${a.hora}`.localeCompare(`${b.concluida ? 1 : 0}${b.data}${b.hora}`));
   const upcoming = nextLeadTask(lead, tasks), link = wpp(lead.telefone);
-  return <Dialog title={lead.nome} subtitle={`${lead.origem || "Origem não informada"} · Cadastro em ${date(lead.data)}`} onClose={onClose} wide>
+  const navigateContact = (id) => {
+    if (busy || !id) return;
+    if (note.trim() || progress.comment) setPendingNavigation(id);
+    else onNavigate(id);
+  };
+  const contactControls = <nav className="crm-contact-navigation" aria-label="Navegar pelos contatos da lista">
+    <button type="button" className="crm-btn crm-btn-small" disabled={busy || !navigation.previous} onClick={() => navigateContact(navigation.previous)} aria-label="Contato anterior"><ChevronLeft size={17} />Anterior</button>
+    <span role="status">{navigation.position} de {navigation.total}</span>
+    <button type="button" className="crm-btn crm-btn-small" disabled={busy || !navigation.next} onClick={() => navigateContact(navigation.next)} aria-label="Próximo contato">Próximo<ChevronRight size={17} /></button>
+  </nav>;
+  return <Dialog title={lead.nome} subtitle={`${leadCollection(lead) === "prospeccao" ? "Prospecção" : "Lead de entrada"} · ${lead.origem || "Origem não informada"} · Cadastro em ${date(lead.data)}`} onClose={onClose} wide navigation={contactControls}>
     <div className="crm-dialog-body">
       <Alert>{error}</Alert>
+      {pendingNavigation && <div className="crm-navigation-warning" role="alert">
+        <p>{progress.comment ? "A anotação foi salva, mas o retorno ainda não foi agendado." : "Há uma anotação que ainda não foi salva neste contato."}</p>
+        <div className="crm-actions"><button type="button" className="crm-btn" onClick={() => setPendingNavigation(null)}>Continuar editando</button><button type="button" className="crm-btn" onClick={() => onNavigate(pendingNavigation)}>{progress.comment ? "Avançar sem agendar" : "Descartar rascunho e avançar"}</button></div>
+      </div>}
       {lead.routingStatus === "pending" && !lead.corretor && !lead.corretorId && <p className="crm-next-task missing" role="status"><strong>Aguardando distribuição.</strong> {lead.routingReason || "Revise a campanha e os participantes na roleta."}</p>}
       <div className="crm-actions"><Badge status={lead.status} /><span style={{ flex: 1 }} />{link && <a className="crm-btn" href={link} target="_blank" rel="noreferrer"><MessageCircle size={14} />WhatsApp</a>}{lead.telefone && <a className="crm-btn" href={`tel:${lead.telefone.replace(/\D/g, "")}`}><Phone size={14} />Ligar</a>}<button className="crm-btn" onClick={onEdit}><Pencil size={14} />Editar contato</button></div>
       <dl className="crm-details">
@@ -285,7 +304,7 @@ function LeadDetail({ lead, comments, tasks, corretoresList, onClose, onEdit, on
   </Dialog>;
 }
 export default function Leads(props) {
-  const { leads, tasks = [], corretoresList, focusLeadId, setFocusLeadId, currentProfile, portfolioScope = "all", setPortfolioScope, leadQueueFilter, setLeadQueueFilter } = props;
+  const { leads, tasks = [], corretoresList, focusLeadId, setFocusLeadId, currentProfile, portfolioScope = "all", setPortfolioScope, leadQueueFilter, setLeadQueueFilter, leadCollectionFilter = "entrada", setLeadCollectionFilter } = props;
   const [needsReturn, setNeedsReturn] = useState(false);
   const [q, setQ] = useState(""),
     [stage, setStage] = useState(""),
@@ -294,22 +313,19 @@ export default function Leads(props) {
     [selected, setSelected] = useState(null),
     [editing, setEditing] = useState(null),
     [creating, setCreating] = useState(false),
+    [navigationQueue, setNavigationQueue] = useState([]),
     [page, setPage] = useState(1);
   useEffect(() => {
     if (!leadQueueFilter) return;
     setQ(""); setStage(leadQueueFilter === "new" ? "novo" : ""); setBroker(leadQueueFilter === "unassigned" ? "unassigned" : ""); setOrigin(""); setNeedsReturn(leadQueueFilter === "needs-return"); setPage(1);
     setLeadQueueFilter?.(null);
   }, [leadQueueFilter, setLeadQueueFilter]);
-  useEffect(() => {
-    if (focusLeadId) {
-      setSelected(focusLeadId);
-      setFocusLeadId(null);
-    }
-  }, [focusLeadId]);
-  useEffect(() => setPage(1), [q, stage, broker, origin, needsReturn, portfolioScope]);
+  useEffect(() => setPage(1), [q, stage, broker, origin, needsReturn, portfolioScope, leadCollectionFilter]);
+  const portfolio = useMemo(() => filterPortfolio(leads, portfolioScope, currentProfile), [leads, portfolioScope, currentProfile]);
+  const collectionLeads = useMemo(() => filterLeadCollection(portfolio, leadCollectionFilter), [portfolio, leadCollectionFilter]);
   const filtered = useMemo(
     () =>
-      filterPortfolio(leads, portfolioScope, currentProfile).filter(
+      collectionLeads.filter(
         (l) =>
           matches([l.nome, l.email, l.telefone, l.interesse, l.imovelRef].join(" "), q) &&
           (!needsReturn || leadNeedsFollowup(l, tasks)) &&
@@ -318,9 +334,21 @@ export default function Leads(props) {
             (broker === "unassigned" ? !l.corretor && !l.corretorId : l.corretor === broker)) &&
           (!origin || l.origem === origin),
       ),
-    [leads, tasks, q, stage, broker, origin, needsReturn, portfolioScope, currentProfile],
+    [collectionLeads, tasks, q, stage, broker, origin, needsReturn],
   );
+  const openContact = (id) => {
+    const queue = filtered.some(lead => String(lead.id) === String(id)) ? filtered : leads.filter(lead => leadCollection(lead) === leadCollection(leads.find(item => String(item.id) === String(id)) || {}));
+    setNavigationQueue(queue.map(lead => lead.id));
+    setSelected(id);
+  };
+  useEffect(() => {
+    if (focusLeadId) {
+      openContact(focusLeadId);
+      setFocusLeadId(null);
+    }
+  }, [focusLeadId]);
   const selectedLead = leads.find((l) => String(l.id) === String(selected));
+  const navigation = contactNavigation(navigationQueue, selected, leads);
   const perPage = 15;
   const maxPage = Math.max(1, Math.ceil(filtered.length / perPage));
   const currentPage = Math.min(page, maxPage);
@@ -342,6 +370,7 @@ export default function Leads(props) {
               "vilavix-leads.csv",
               [
                 "Nome",
+                "Carteira",
                 "E-mail",
                 "Telefone",
                 "Etapa",
@@ -352,6 +381,7 @@ export default function Leads(props) {
               ],
               filtered.map((l) => [
                 l.nome,
+                leadCollection(l) === "prospeccao" ? "Prospecção" : "Lead de entrada",
                 l.email,
                 l.telefone,
                 LABELS[l.status],
@@ -374,9 +404,10 @@ export default function Leads(props) {
           Novo lead
         </button>
       </PageHeader>
+      <LeadCollectionTabs leads={portfolio} value={leadCollectionFilter} onChange={value => { setLeadCollectionFilter(value); setStage(""); setPage(1); }} />
       <div className="crm-scope-bar">
         {setPortfolioScope && <div className="crm-tabs">{[["all", "Todos os contatos"], ["mine", "Minha carteira"], ["unassigned", "Sem responsável"]].map(([value, label]) => <button key={value} className={portfolioScope === value ? "active" : ""} onClick={() => { setPortfolioScope(value); setBroker(""); }}>{label}</button>)}</div>}
-        <label className="crm-followup-filter"><input type="checkbox" checked={needsReturn} onChange={(e) => setNeedsReturn(e.target.checked)} />Sem retorno agendado ({filterPortfolio(leads, portfolioScope, currentProfile).filter((l) => leadNeedsFollowup(l, tasks)).length})</label>
+        <label className="crm-followup-filter"><input type="checkbox" checked={needsReturn} onChange={(e) => setNeedsReturn(e.target.checked)} />Sem retorno agendado ({collectionLeads.filter((l) => leadNeedsFollowup(l, tasks)).length})</label>
       </div>
       <div className="crm-toolbar">
         <SearchBox
@@ -457,7 +488,7 @@ export default function Leads(props) {
                           <div>
                             <button
                               className="crm-link"
-                              onClick={() => setSelected(l.id)}
+                              onClick={() => openContact(l.id)}
                             >
                               {l.nome}
                             </button>
@@ -486,12 +517,12 @@ export default function Leads(props) {
                         )}
                       </td>
                       <td>{l.origem || "—"}</td>
-                      <td>{(() => { const next = nextLeadTask(l, tasks); return next ? <div className={`crm-next-task ${next.data < today() ? "overdue" : ""}`}><span>{next.titulo}</span><small>{date(next.data)} · {next.hora?.slice(0, 5) || "Sem horário"}{next.data < today() && " · Em atraso"}</small></div> : <button className="crm-link crm-next-task missing" onClick={() => setSelected(l.id)}>{isOpenLead(l) ? "Agendar retorno" : "Atendimento encerrado"}</button>; })()}</td>
+                      <td>{(() => { const next = nextLeadTask(l, tasks); return next ? <div className={`crm-next-task ${next.data < today() ? "overdue" : ""}`}><span>{next.titulo}</span><small>{date(next.data)} · {next.hora?.slice(0, 5) || "Sem horário"}{next.data < today() && " · Em atraso"}</small></div> : <button className="crm-link crm-next-task missing" onClick={() => openContact(l.id)}>{isOpenLead(l) ? "Agendar retorno" : "Atendimento encerrado"}</button>; })()}</td>
                       <td>
                         <button
                           className="crm-icon-btn"
                           aria-label={`Abrir ${l.nome}`}
-                          onClick={() => setSelected(l.id)}
+                          onClick={() => openContact(l.id)}
                         >
                           <ArrowRight size={14} />
                         </button>
@@ -531,14 +562,14 @@ export default function Leads(props) {
         ) : (
           <Empty
             title={
-              leads.length
+              collectionLeads.length
                 ? "Nenhum contato corresponde aos filtros"
-                : "Nenhum contato cadastrado"
+                : leadCollectionFilter === "prospeccao" ? "Nenhum contato de prospecção nesta carteira" : "Nenhum lead nesta carteira"
             }
             text={
-              leads.length
+              collectionLeads.length
                 ? "Ajuste a busca ou os filtros para encontrar o contato."
-                : "Cadastre um lead para organizar seu atendimento e acompanhar cada etapa."
+                : "Escolha outra carteira nas abas acima ou confira os contatos disponíveis para o seu responsável."
             }
           >
             <button
@@ -551,6 +582,7 @@ export default function Leads(props) {
                   setOrigin("");
                   setNeedsReturn(false);
                   setPortfolioScope?.("all");
+                  setLeadCollectionFilter("all");
                 } else setCreating(true);
               }}
             >
@@ -564,6 +596,8 @@ export default function Leads(props) {
           key={selectedLead.id}
           {...props}
           lead={selectedLead}
+          navigation={navigation}
+          onNavigate={(id) => { setSelected(id); const index = filtered.findIndex(lead => String(lead.id) === String(id)); if (index >= 0) setPage(Math.floor(index / perPage) + 1); }}
           onClose={() => setSelected(null)}
           onEdit={() => setEditing(selectedLead)}
           onDelete={() => props.deleteLead(selectedLead.id)}

@@ -151,7 +151,7 @@ export function Field({ label, children, wide }) {
     </label>
   );
 }
-export function Dialog({ title, subtitle, onClose, children, wide = false }) {
+export function Dialog({ title, subtitle, onClose, children, wide = false, navigation }) {
   const ref = useRef();
   const id = useId();
   useEffect(() => {
@@ -200,12 +200,13 @@ export function Dialog({ title, subtitle, onClose, children, wide = false }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={id}
-        className={`crm-dialog ${wide ? "crm-dialog-wide" : ""}`}
+        className={`crm-dialog ${wide ? "crm-dialog-wide" : ""} ${navigation ? "crm-dialog-with-navigation" : ""}`}
       >
         <div className="crm-dialog-heading">
-          <div>
+          <div className="crm-dialog-heading-content">
             <h2 id={id}>{title}</h2>
             {subtitle && <p>{subtitle}</p>}
+            {navigation}
           </div>
           <button
             className="crm-icon-btn"

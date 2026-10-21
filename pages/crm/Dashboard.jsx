@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { CalendarDays, Plus, Check, Clock3, ArrowRight, CalendarClock, Phone, MessageCircle, Building2 } from "lucide-react";
 import { PageHeader, Badge, Avatar, Empty, today, date, TYPES, wpp } from "./CRMUI.jsx";
 import { filterPortfolio, isOpenLead, nextTaskForLead } from "../../lib/broker-workflow.js";
+import { leadCollection } from "../../lib/lead-collections.js";
 
 function tomorrow() {
   const value = new Date(`${today()}T12:00:00`);
@@ -9,7 +10,7 @@ function tomorrow() {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 }
 
-export default function Dashboard({ leads, tasks, setMenu, goToLead, toggleTask, updateTask, currentProfile, portfolioScope, openTaskDraft, setAgendaFilter, setLeadQueueFilter, demo, tasksLoading = false, tasksError = "" }) {
+export default function Dashboard({ leads, tasks, setMenu, goToLead, toggleTask, updateTask, currentProfile, portfolioScope, openTaskDraft, setAgendaFilter, setLeadQueueFilter, setLeadCollectionFilter, demo, tasksLoading = false, tasksError = "" }) {
   const [busy, setBusy] = useState(null);
   const [view, setView] = useState("today");
   const day = today();
@@ -22,7 +23,8 @@ export default function Dashboard({ leads, tasks, setMenu, goToLead, toggleTask,
   const todayTasks = scopedTasks.filter(task => task.data === day).sort((a, b) => `${a.hora || "23:59"}`.localeCompare(`${b.hora || "23:59"}`));
   const futureTasks = pending.filter(task => task.data > day).sort((a, b) => `${a.data}${a.hora || ""}`.localeCompare(`${b.data}${b.hora || ""}`));
   const unscheduled = scopedLeads.filter(lead => isOpenLead(lead) && !nextTaskForLead(lead.id, tasks));
-  const newLeads = scopedLeads.filter(lead => lead.status === "novo");
+  const newLeads = scopedLeads.filter(lead => lead.status === "novo" && leadCollection(lead) === "entrada");
+  const prospects = scopedLeads.filter(lead => isOpenLead(lead) && leadCollection(lead) === "prospeccao");
   const agenda = view === "today" ? todayTasks : futureTasks;
   const act = async (id, action) => {
     setBusy(id);
@@ -30,7 +32,7 @@ export default function Dashboard({ leads, tasks, setMenu, goToLead, toggleTask,
     finally { setBusy(null); }
   };
   const showAgenda = (filter) => { setAgendaFilter(filter); setMenu("tarefas"); };
-  const showContactQueue = (filter) => { setLeadQueueFilter(filter); setMenu("leads"); };
+  const showContactQueue = (filter, collection = "all") => { setLeadCollectionFilter(collection); setLeadQueueFilter(filter); setMenu("leads"); };
   const taskRow = (task, late = false) => {
     const lead = leads.find(item => String(item.id) === String(task.leadId));
     return <div className={`crm-day-task ${task.concluida ? "is-done" : ""}`} key={task.id}>
@@ -50,7 +52,7 @@ export default function Dashboard({ leads, tasks, setMenu, goToLead, toggleTask,
     {!agendaUnavailable && <div className="crm-day-brief" aria-label="Resumo da carteira">
       <button onClick={() => showAgenda("overdue")} className={overdue.length ? "needs-attention" : ""}><Clock3 size={19} /><strong>{overdue.length}</strong><span>{overdue.length === 1 ? "atividade atrasada" : "atividades atrasadas"}</span><ArrowRight size={15} /></button>
       <button onClick={() => showAgenda("today")}><CalendarDays size={19} /><strong>{todayTasks.filter(task => !task.concluida).length}</strong><span>pendentes hoje</span><ArrowRight size={15} /></button>
-      <button onClick={() => showContactQueue("new")}><Phone size={19} /><strong>{newLeads.length}</strong><span>no primeiro atendimento</span><ArrowRight size={15} /></button>
+      <button onClick={() => showContactQueue("new", "entrada")}><Phone size={19} /><strong>{newLeads.length}</strong><span>leads novos sem atendimento</span><ArrowRight size={15} /></button>
     </div>}
     <div className="crm-daily-layout">
       <div className="crm-daily-main">
@@ -65,11 +67,12 @@ export default function Dashboard({ leads, tasks, setMenu, goToLead, toggleTask,
           <div className="crm-day-footer"><span>{view === "today" ? `${todayTasks.filter(task => task.concluida).length} concluídas hoje` : `${futureTasks.length} atividades agendadas`}</span><button className="crm-link" onClick={() => showAgenda("all")}>Abrir agenda completa <ArrowRight size={14} /></button></div>
         </section>}
         <section className="crm-card crm-incoming-card">
-          <div className="crm-card-heading"><div><h2>Primeiro atendimento</h2><p>Contatos que ainda estão na etapa inicial.</p></div><span className="crm-count">{newLeads.length}</span></div>
+          <div className="crm-card-heading"><div><h2>Novos leads para atender</h2><p>Entradas das campanhas e demais canais, sem a base de prospecção.</p></div><span className="crm-count">{newLeads.length}</span></div>
           {newLeads.length ? newLeads.slice(0, 4).map(lead => <div className="crm-incoming-row" key={lead.id}><Avatar name={lead.nome} /><div><button className="crm-link" onClick={() => goToLead(lead.id)}>{lead.nome}</button><small>{lead.interesse || "Interesse não informado"}</small><span>{lead.origem || "Origem não informada"}{!lead.corretor && !lead.corretorId ? " · Sem corretor" : ""}</span></div><button className="crm-btn crm-btn-small" onClick={() => goToLead(lead.id)}>Atender <ArrowRight size={14} /></button></div>) : <Empty title="Nenhum contato aguardando" text="Novos contatos aparecem aqui até o início do atendimento." />}
         </section>
       </div>
       <aside className="crm-daily-aside">
+        <section className="crm-card crm-prospect-summary"><div className="crm-card-heading"><div><h2>Prospecção <span className="crm-count">{prospects.length}</span></h2><p>Contatos da base histórica com atendimento em aberto.</p></div></div><button className="crm-btn" onClick={() => showContactQueue("all", "prospeccao")}>Abrir carteira de prospecção<ArrowRight size={15} /></button></section>
         {!agendaUnavailable && <section className="crm-card crm-next-step-card">
           <div className="crm-card-heading"><div><h2>Sem próximo passo <span className="crm-count">{unscheduled.length}</span></h2><p>Contatos em aberto sem uma atividade pendente.</p></div></div>
           {unscheduled.length ? unscheduled.slice(0, 5).map(lead => <div className="crm-next-step" key={lead.id}><div className="crm-next-step-title"><button className="crm-link" onClick={() => goToLead(lead.id)}>{lead.nome}</button><Badge status={lead.status} /></div><p>{lead.interesse || "Interesse não informado"}</p><button className="crm-btn crm-btn-small" onClick={() => openTaskDraft(lead.id, "ligacao")}><CalendarClock size={14} />Agendar retorno</button></div>) : <Empty title="Próximos passos definidos" text="Os contatos em aberto têm atividades agendadas." />}

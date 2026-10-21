@@ -1,4 +1,20 @@
 .crm-scope-bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:0 0 16px}
+.crm-lead-collections{margin:0 0 22px}
+.crm-lead-collections .crm-tabs{display:flex;flex-wrap:wrap;gap:4px;width:fit-content;margin:0}
+.crm-lead-collections .crm-tabs button{display:flex;align-items:center;gap:9px;min-height:44px}
+.crm-lead-collections .crm-tabs button span{font-size:11px;padding:2px 7px;border-radius:7px;background:#e9edf1;color:#405568;font-variant-numeric:tabular-nums}
+.crm-lead-collections .crm-tabs button.active span{background:#fff2;color:inherit}
+.crm-lead-collections p{margin:10px 0 0;font-size:12px;line-height:1.6;color:#566574}
+.crm-dialog-heading-content{min-width:0;flex:1}
+.crm-dialog-with-navigation .crm-dialog-heading{position:sticky;top:0;z-index:2;background:#fff}
+.crm-contact-navigation{display:flex;align-items:center;gap:12px;margin-top:16px;max-width:370px}
+.crm-contact-navigation .crm-btn{min-height:44px;white-space:nowrap}
+.crm-contact-navigation>span{flex:1;text-align:center;font-size:12px;color:#536274;font-variant-numeric:tabular-nums}
+.crm-navigation-warning{border:1px solid #e2c78f;background:#fff9ed;color:#78531c;border-radius:12px;padding:14px;margin-bottom:18px}
+.crm-navigation-warning p{font-size:13px;line-height:1.6;margin:0 0 12px}
+.crm-navigation-warning .crm-actions{flex-wrap:wrap}
+.crm-prospect-summary>.crm-btn{margin:0 20px 20px}
+@media(max-width:700px){.crm-contact-navigation{gap:8px}.crm-contact-navigation .crm-btn{padding:8px 10px;font-size:12px}.crm-dialog-with-navigation .crm-dialog-heading{gap:10px;padding:16px}.crm-dialog-with-navigation .crm-dialog-heading>.crm-icon-btn{min-width:36px;min-height:44px}.crm-lead-collections .crm-tabs button{padding:10px;gap:6px}}
 .crm-scope-bar .crm-tabs{margin:0}.crm-followup-filter{margin-left:auto;display:flex;gap:8px;align-items:center;font-size:12px;color:#536274}
 .crm-followup-filter input{accent-color:#94283c;width:16px;height:16px}
 .crm-next-task{display:flex;flex-direction:column;gap:4px;max-width:220px;font-size:12px}.crm-next-task small{font-size:11px;color:#687585}.crm-next-task.overdue{color:#9e373b}.crm-next-task.missing{color:#935f27}

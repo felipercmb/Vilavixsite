@@ -12,6 +12,7 @@ const AlugueisCRM = lazy(() => import("./AlugueisCRM.jsx"));
 import { createRentalRepository } from "../../lib/rentals.js";
 import * as db from "../../lib/db.js";
 import { filterPortfolio } from "../../lib/broker-workflow.js";
+import { leadCollection } from "../../lib/lead-collections.js";
 import { normalizeProperty } from "../../lib/property.js";
 import { createCrmResourceLoader, crmResourcePlan, CRM_RESOURCE_LABELS } from "../../lib/crm-resources.js";
 import { createCrmTaskCache } from "../../lib/crm-task-cache.js";
@@ -285,6 +286,7 @@ export default function CrmLayout({
     }),
     [taskDraft, setTaskDraft] = useState(null),
     [agendaFilter, setAgendaFilter] = useState("all"),
+    [leadCollectionFilter, setLeadCollectionFilter] = useState("entrada"),
     [leadQueueFilter, setLeadQueueFilter] = useState(null);
   useEffect(() => {
     try { localStorage.setItem(`vilavix:portfolio:${demo ? "review" : user?.id}`, portfolioScope); }
@@ -585,6 +587,8 @@ export default function CrmLayout({
     setLeads((result.data || []).map(mapLead));
   };
   const goToLead = (id) => {
+    const lead = leads.find(item => String(item.id) === String(id));
+    if (lead) setLeadCollectionFilter(leadCollection(lead));
     setFocusLeadId(id);
     setMenu("leads");
   };
@@ -594,6 +598,8 @@ export default function CrmLayout({
     setMobileOpen(false);
   };
   const shared = {
+    leadCollectionFilter,
+    setLeadCollectionFilter,
     portfolioScope,
     setPortfolioScope,
     taskDraft,

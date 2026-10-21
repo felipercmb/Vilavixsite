@@ -1,7 +1,8 @@
 import React, { useDeferredValue, useMemo, useRef, useState } from "react";
 import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, List, Inbox } from "lucide-react";
 import { PageHeader, SearchBox, LABELS, Avatar, Badge, Alert, date, today } from "./CRMUI.jsx";
-import { indexNextTasks } from "../../lib/broker-workflow.js";
+import { filterPortfolio, indexNextTasks } from "../../lib/broker-workflow.js";
+import LeadCollectionTabs from "./LeadCollectionTabs.jsx";
 import { PIPELINE_STAGES, buildPipelineModel, getPipelinePage, isPipelineOpen, normalizePipelineStage } from "../../lib/pipeline-model.js";
 import "../../styles/crm-workflows.css";
 import "../../styles/crm-pipeline.css";
@@ -35,7 +36,7 @@ function LeadCard({ lead, nextTask, tasksReady, tasksLoading, saving, onMove, on
   </article>;
 }
 
-export default function Pipeline({ leads = [], corretoresList = [], updateLead, goToLead, setMenu, tasks = [], currentProfile, tasksLoading = false, tasksError = null }) {
+export default function Pipeline({ leads = [], corretoresList = [], updateLead, goToLead, setMenu, tasks = [], currentProfile, tasksLoading = false, tasksError = null, leadCollectionFilter = "entrada", setLeadCollectionFilter }) {
   const [scope, setScope] = useState("all"), [query, setQuery] = useState(""), [broker, setBroker] = useState("");
   const [origin, setOrigin] = useState(""), [priority, setPriority] = useState(""), [returnState, setReturnState] = useState(""), [sort, setSort] = useState("recent");
   const [pages, setPages] = useState({}), [dragOver, setDragOver] = useState(null), [saving, setSaving] = useState(null), [error, setError] = useState(""), [notice, setNotice] = useState("");
@@ -53,8 +54,9 @@ export default function Pipeline({ leads = [], corretoresList = [], updateLead, 
   }, [corretoresList, leads]);
   const origins = useMemo(() => [...new Set(leads.map((lead) => lead.origem).filter(Boolean))].sort(), [leads]);
   const brokerName = brokerOptions.find((option) => option.value === broker)?.name || "";
-  const model = useMemo(() => buildPipelineModel(leads, nextTasks, { scope, profile: currentProfile, query: deferredQuery, broker, brokerName, origin, priority, returnState: tasksReady ? returnState : "", sort: !tasksReady && sort === "return" ? "recent" : sort, day }), [leads, nextTasks, scope, currentProfile, deferredQuery, broker, brokerName, origin, priority, returnState, sort, tasksReady, day]);
-  const pageKey = JSON.stringify([scope, deferredQuery, broker, origin, priority, returnState, sort]);
+  const portfolio = useMemo(() => filterPortfolio(leads, scope, currentProfile), [leads, scope, currentProfile]);
+  const model = useMemo(() => buildPipelineModel(leads, nextTasks, { scope, profile: currentProfile, collection: leadCollectionFilter, query: deferredQuery, broker, brokerName, origin, priority, returnState: tasksReady ? returnState : "", sort: !tasksReady && sort === "return" ? "recent" : sort, day }), [leads, nextTasks, scope, currentProfile, leadCollectionFilter, deferredQuery, broker, brokerName, origin, priority, returnState, sort, tasksReady, day]);
+  const pageKey = JSON.stringify([scope, leadCollectionFilter, deferredQuery, broker, origin, priority, returnState, sort]);
   const effectivePages = pages.key === pageKey ? pages.values || {} : {};
   const hasFilters = Boolean(query || broker || origin || priority || returnState || scope !== "all");
   const pageTo = (stage, page) => { setPages({ key: pageKey, values: { ...effectivePages, [stage]: page } }); bodyRefs.current[stage]?.scrollTo({ top: 0 }); };
@@ -74,6 +76,7 @@ export default function Pipeline({ leads = [], corretoresList = [], updateLead, 
 
   return <div className="crm-complete-pipeline">
     <PageHeader title="Funil completo" description="Todos os contatos disponíveis, do primeiro atendimento ao encerramento."><button className="crm-btn" onClick={() => setMenu("leads")}><List size={16} />Ver em lista</button></PageHeader>
+    <LeadCollectionTabs leads={portfolio} value={leadCollectionFilter} onChange={setLeadCollectionFilter} />
     <Alert>{error}</Alert>
     {notice && <p className="crm-confirmed-note" role="status">{notice}</p>}
     {tasksError && <Alert>A agenda não pôde ser carregada. Os contatos continuam disponíveis; filtros e indicadores de retorno serão exibidos quando a conexão for restabelecida.</Alert>}
