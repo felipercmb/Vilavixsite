@@ -50,3 +50,9 @@ Em **Gestão → Gestão do remalho** (`/crm/remalho`), administradores consulta
 Dias e limites de período usam America/Sao_Paulo, incluindo a data inicial e excluindo a meia-noite seguinte à data final. O gráfico mostra até os 14 últimos dias do período e distingue funcionária e supervisão. As listas são paginadas no servidor, com contagens integrais (incluindo mais de mil registros); busca e situação afetam somente as listas, não os indicadores. O histórico individual carrega todas as páginas. Exportar resumo gera CSV dos indicadores, sem confundir a página atual com uma exportação integral de contatos. O painel atualiza a cada minuto quando visível e oferece atualização manual.
 
 A aba abre vazia enquanto a funcionária não for cadastrada e vinculada. Dados fictícios são exclusivos da revisão em desenvolvimento; não há registros simulados em produção.
+
+## Organização das telas
+
+A atendente pode priorizar atrasados, retornos de hoje ou agendados, navegar entre contatos mantendo os rascunhos nesta tela e consultar o último registro antes de escrever. Os atalhos de data apenas preenchem o formulário: a tarefa só muda após salvar com confirmação do banco. O histórico e as datas com hora usam Brasília.
+
+A gestão oferece três visualizações: **Visão geral**, **Atividades** e **Contatos**. O diário agrupa as atividades por data na página consultada; comentários extensos podem ser expandidos. No celular, contatos e resultados dos corretores usam listas com os mesmos campos das tabelas. O acesso às configurações permanece exclusivo do administrador, e a publicação desses refinamentos não ativa a reativação.
