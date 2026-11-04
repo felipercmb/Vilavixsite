@@ -10,6 +10,7 @@ const AddImovel = lazy(() => import("./AddImovel.jsx"));
 const Campanhas = lazy(() => import("./Campanhas.jsx"));
 const AlugueisCRM = lazy(() => import("./AlugueisCRM.jsx"));
 const Reativacao = lazy(() => import("./Reativacao.jsx"));
+const RemalhoGestao = lazy(() => import("./RemalhoGestao.jsx"));
 import { createRentalRepository } from "../../lib/rentals.js";
 import * as db from "../../lib/db.js";
 import { filterPortfolio } from "../../lib/broker-workflow.js";
@@ -67,6 +68,7 @@ const MENU_GROUPS = [
     { id: "reativacao", label: "Reativação de leads", Icon: RotateCcw },
   ] },
   { label: "Gestão", adminOnly: true, items: [
+    { id: "remalho", label: "Gestão do remalho", Icon: RotateCcw },
     { id: "campanhas", label: "Campanhas e roleta", Icon: Megaphone },
     { id: "corretores", label: "Equipe", Icon: UserCheck },
   ] },
@@ -643,7 +645,7 @@ export default function CrmLayout({
     setLeads([]);setComments({});taskCache.current.reset();setTasks([]);setVisitTasks([]);
   };
   const goToReactivationCase = (id,leadId) => {
-    if(!reactivationAccess){if(leadId)goToLead(leadId);return;}
+    if(!reactivationAccess && currentProfile?.role!=="admin"){if(leadId)goToLead(leadId);return;}
     setFocusReactivationId(id);setMenu("reativacao");setMobileOpen(false);
   };
   const shared = {
@@ -703,6 +705,7 @@ export default function CrmLayout({
     tarefas: <Tarefas key="tarefas" {...shared} />,
     visitas: <Tarefas key="visitas" {...shared} visitsOnly />,
     campanhas: <Campanhas {...shared} />,
+    remalho: <RemalhoGestao {...shared} />,
     reativacao: reactivationAccess ? <Reativacao {...shared} /> : <section className="crm-panel crm-empty"><KeyRound size={28}/><h2>Reativação restrita</h2><p>Esta área está disponível para a funcionária vinculada e para os administradores.</p><button className="crm-btn" onClick={loadData}>Verificar acesso novamente</button></section>,
     alugueis: rentalAccess && (demo || currentProfile?.id === user?.id) ? (
       <AlugueisCRM {...shared} />

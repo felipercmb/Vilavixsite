@@ -22,6 +22,8 @@ React e Vite, Supabase com acesso por conta e Vercel em vilavix.com. O calendár
 
 A reativação deve gerar tarefas diárias, manter histórico e confirmar as gravações no banco. A nova funcionária ainda não foi cadastrada: a automação permanecerá desativada até o administrador vincular a conta. A roleta dos reativados usa os corretores que estão recebendo leads; pausas existentes devem ser respeitadas. Leads fechados e descartados não entram automaticamente.
 
+Administradores supervisionam o remalho em uma aba exclusiva: resultados por período e responsável, pendências atuais, comentários com autoria, histórico completo e etapas atuais dos contatos encaminhados. Registros de supervisão são distinguidos das tentativas da funcionária. O relatório não altera contatos, configurações ou distribuição.
+
 ## Brand Commitments
 
 Nome e logo reais da VilaVix, idioma português e controles arredondados solicitados pelo usuário. A nova área deve seguir a interface atual do CRM.

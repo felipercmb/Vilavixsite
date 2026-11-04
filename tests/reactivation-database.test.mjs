@@ -57,6 +57,66 @@ async function enable(db) {
  await db.query('SELECT save_reactivation_settings($1,$2,true)',[worker,[a,b]]);
  await db.exec('SELECT process_reactivation_queue(500)');
 }
+async function management(db) {
+ await root(db);
+ const sql=await readFile(new URL('../supabase/migrations/20261104160000_reactivation_management.sql',import.meta.url),'utf8');
+ await db.exec(sql);
+ await login(db,admin);
+}
+const report=async(db,from=null,to=null,workerId=null,status='all',query='',page=1,activityPage=1)=>(await one(db,'SELECT reactivation_admin_report($1,$2,$3,$4,$5,$6,$7) AS r',[from,to,workerId,status,query,page,activityPage])).r;
+
+test('gestão do remalho é somente leitura, começa vazia e rejeita funcionária, corretor e acesso anônimo',async()=>{
+ const {db}=await fixture();try {
+  await management(db); const r=await report(db);
+  assert.equal(r.metrics.attempts,0);assert.equal(r.metrics.reactivationRate,null);assert.equal(r.settings.enabled,false);assert.equal(r.settings.workerId,null);
+  for(const id of [worker,a]){await login(db,id);await assert.rejects(report(db),e=>e.code==='42501');}
+  await root(db);await db.exec('SET ROLE anon');await assert.rejects(report(db),e=>e.code==='42501');
+  await root(db);assert.equal((await one(db,'SELECT count(*)::int AS n FROM reactivation_cases')).n,0);
+  assert.equal((await one(db,'SELECT corretor_id FROM leads WHERE id=1')).corretor_id,a);
+ }finally{await db.close();}
+});
+
+test('gestão distingue tentativas da funcionária e supervisão, finalizações e resultado atual depois do repasse',async()=>{
+ const {db}=await fixture();try {
+  await enable(db);await management(db);await login(db,worker);
+  await db.query('SELECT record_reactivation_contact(1,$1,$2,current_date+1,$3)',['Primeira conversa.','em_conversa',req(40)]);
+  await login(db,admin);await db.query('SELECT record_reactivation_contact(1,$1,$2,current_date+1,$3)',['Supervisão da conversa.','em_conversa',req(41)]);
+  await login(db,worker);await db.query('SELECT finish_reactivation(1,$1,true,$2)',['Confirmou interesse e quer visitar.',req(42)]);
+  await db.query('SELECT finish_reactivation(2,$1,false,$2)',['Não quer mais comprar.',req(43)]);
+  await root(db);await db.query("UPDATE leads SET status='fechado',corretor_id=$1,corretor='Corretor B' WHERE id=1",[b]);
+  await login(db,admin);const r=await report(db);
+  assert.equal(r.metrics.received,2);assert.equal(r.metrics.workerAttempts,3);assert.equal(r.metrics.supervisorAttempts,1);assert.equal(r.metrics.contacted,2);
+  assert.equal(r.metrics.reactivated,1);assert.equal(r.metrics.closed,1);assert.equal(r.metrics.reactivationRate,50);
+  assert.equal(r.deliveries[0].broker_id,a);assert.equal(r.deliveries[0].won,1);assert.equal(r.deliveries[0].reassigned,1);
+  assert.equal(r.activities.find(n=>!n.by_worker).author_id,admin);assert.equal(r.activities.find(n=>n.case_id===1).status,'reactivated');
+  const queryOnly=await report(db,null,null,null,'reactivated','SEM ATUALIZAÇÃO');
+  assert.equal(queryOnly.pagination.caseTotal,1);assert.deepEqual(queryOnly.metrics,r.metrics);
+  assert.equal((await one(db,'SELECT cursor_position FROM reactivation_settings')).cursor_position,0);
+ }finally{await db.close();}
+});
+
+test('relatório conta mais de mil registros, pagina sem perder tentativas e limita a página solicitada',async()=>{
+ const {db}=await fixture();try {
+  await enable(db);await management(db);await root(db);
+  await db.query("INSERT INTO reactivation_notes(case_id,author_id,author_name,body,outcome,request_id) SELECT 1,$1,'Funcionária Exemplo','Tentativa de acompanhamento','sem_resposta',md5(i::text)::uuid FROM generate_series(1,1005) i",[worker]);
+  await login(db,admin);const r=await report(db);assert.equal(r.metrics.attempts,1005);assert.equal(r.pagination.activityTotal,1005);assert.equal(r.activities.length,20);
+  const second=await report(db,null,null,null,'all','',1,2);assert(!second.activities.some(n=>r.activities.some(a=>a.id===n.id)));
+  const last=await report(db,null,null,null,'all','',999,999);assert.equal(last.pagination.activityPage,51);assert.equal(last.activities.length,5);assert.equal(last.pagination.casePage,1);
+ }finally{await db.close();}
+});
+
+test('período usa limites de Brasília, filtros não alteram pendências e responsável não mistura produção',async()=>{
+ const {db}=await fixture();try {
+  await enable(db);await management(db);await root(db);
+  const day=(await one(db,"SELECT (now() AT TIME ZONE 'America/Sao_Paulo')::date::text AS day")).day;
+  await db.query("UPDATE reactivation_cases SET worker_id=$1,next_contact_on=$2::date-1 WHERE id=2",[a,day]);
+  await db.query("INSERT INTO reactivation_notes(case_id,author_id,author_name,body,outcome,request_id,created_at) VALUES (1,$1,'Funcionária Exemplo','Antes do limite','sem_resposta',$3,$2::date::timestamp AT TIME ZONE 'America/Sao_Paulo'-interval '1 second'),(1,$1,'Funcionária Exemplo','Dentro do limite','sem_resposta',$4,$2::date::timestamp AT TIME ZONE 'America/Sao_Paulo'),(2,$5,'Corretor A','Outro responsável','sem_resposta',$6,$2::date::timestamp AT TIME ZONE 'America/Sao_Paulo')",[worker,day,req(50),req(51),a,req(52)]);
+  await login(db,admin);const r=await report(db,day,day,worker);assert.equal(r.metrics.attempts,1);assert.equal(r.queue.active,1);assert.equal(r.daily[0].attempts,1);
+  const other=await report(db,day,day,a);assert.equal(other.metrics.attempts,1);assert.equal(other.queue.overdue,1);
+  const none=await report(db,day,day,worker,'closed','inexistente');assert.equal(none.pagination.caseTotal,0);assert.equal(none.metrics.attempts,1);assert.deepEqual(none.queue,r.queue);
+  await assert.rejects(report(db,'2099-01-01'),/período válido/);await assert.rejects(report(db,null,null,null,'invalid'),/Situação/);
+ }finally{await db.close();}
+});
 
 test('instalação idempotente começa desativada; 14 dias e sinais históricos selecionam só contatos abertos atribuídos',async()=>{
  const {db,migration}=await fixture(); try {

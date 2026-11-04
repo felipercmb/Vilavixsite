@@ -35,3 +35,18 @@ As tabelas `reactivation_settings`, `reactivation_cases` e `reactivation_notes` 
 O job funciona no próprio banco, sem novas chaves ou serviço externo. O perfil da funcionária deve permanecer ativo. A troca da conta responsável é bloqueada enquanto existirem acompanhamentos abertos. Desativar a entrada automática interrompe novas entradas e preserva a operação da fila existente.
 
 Os testes de banco usam dados fictícios e verificam limite de 14 dias, exclusões, permissões por conta, prioridade da pausa, idempotência, transações interrompidas, conclusão, datas e independência da roleta. A interface de demonstração só existe em desenvolvimento.
+
+## Supervisão administrativa do remalho
+
+Em **Gestão → Gestão do remalho** (`/crm/remalho`), administradores consultam resultados por período e responsável. O relatório `reactivation_admin_report` exige uma conta ativa com papel de administrador no próprio banco; esconder o menu não é a proteção de acesso. A consulta é somente leitura e não ativa o fluxo ou movimenta leads.
+
+- Recebidos: acompanhamentos cuja entrada ocorreu no período.
+- Tentativas da funcionária: registros no período cuja autora é a responsável pelo acompanhamento. Intervenções com outra autoria aparecem separadamente como supervisão.
+- Contatos trabalhados: acompanhamentos distintos com ao menos um registro no período, incluindo supervisão. Duas tentativas no mesmo contato contam uma vez aqui.
+- Reativados e sem interesse: acompanhamentos finalizados no período por resultado. A taxa é reativados divididos por todos os finalizados no período; sem finalizações, exibe um traço.
+- Pendências agora: fila ativa da responsável selecionada, independente do período. Os atalhos mudam explicitamente o período para todo o histórico e abrem a lista de contatos correspondente.
+- Depois da reativação: encaminhamentos realizados no período por corretor destinatário, confrontados com a etapa atual do lead. Sinaliza mudança posterior de responsável. Não representa uma conversão histórica na data da entrega.
+
+Dias e limites de período usam America/Sao_Paulo, incluindo a data inicial e excluindo a meia-noite seguinte à data final. O gráfico mostra até os 14 últimos dias do período e distingue funcionária e supervisão. As listas são paginadas no servidor, com contagens integrais (incluindo mais de mil registros); busca e situação afetam somente as listas, não os indicadores. O histórico individual carrega todas as páginas. Exportar resumo gera CSV dos indicadores, sem confundir a página atual com uma exportação integral de contatos. O painel atualiza a cada minuto quando visível e oferece atualização manual.
+
+A aba abre vazia enquanto a funcionária não for cadastrada e vinculada. Dados fictícios são exclusivos da revisão em desenvolvimento; não há registros simulados em produção.
