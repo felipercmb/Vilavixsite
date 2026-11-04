@@ -185,7 +185,7 @@ function TaskForm({ task, draft, leads, onSave, onClose, visitsOnly }) {
 function readAgendaFilters(key) {
   try { return JSON.parse(sessionStorage.getItem(key) || "{}"); } catch { return {}; }
 }
-export default function Tarefas({ tasks, leads, addTask, updateTask, deleteTask, toggleTask, goToLead, visitsOnly = false, currentProfile, portfolioScope = "all", setPortfolioScope, taskDraft, setTaskDraft, agendaFilter, setAgendaFilter }) {
+export default function Tarefas({ tasks, leads, addTask, updateTask, deleteTask, toggleTask, goToLead, goToReactivationCase, setMenu, visitsOnly = false, currentProfile, portfolioScope = "all", setPortfolioScope, taskDraft, setTaskDraft, agendaFilter, setAgendaFilter }) {
   const filterKey = `vilavix:agenda-filters:${visitsOnly ? "visitas" : "tarefas"}:v1`;
   const [preferences] = useState(() => readAgendaFilters(filterKey));
   const [q, setQ] = useState(preferences.q || ""), [tab, setTab] = useState(preferences.tab || "pending"), [type, setType] = useState(preferences.type || ""), [selectedDate, setSelectedDate] = useState(preferences.selectedDate || "");
@@ -200,7 +200,8 @@ export default function Tarefas({ tasks, leads, addTask, updateTask, deleteTask,
     if (!taskDraft) return;
     if (taskDraft.taskId) {
       const task = tasks.find((t) => String(t.id) === String(taskDraft.taskId));
-      if (task) setEditing(task); else setError("Atividade não encontrada. Atualize os dados da agenda.");
+      if (task?.reactivationCaseId&&task.tipoAuto==='reativacao') goToReactivationCase(task.reactivationCaseId,task.leadId);
+      else if (task) setEditing(task); else setError("Atividade não encontrada. Atualize os dados da agenda.");
     } else {
       const lead = leads.find((l) => String(l.id) === String(taskDraft.leadId));
       setDraft({ ...taskDraft, titulo: taskDraft.titulo || (lead ? `${taskDraft.tipo === "visita" ? "Visita com" : "Retornar contato de"} ${lead.nome}` : "") });
@@ -234,14 +235,16 @@ export default function Tarefas({ tasks, leads, addTask, updateTask, deleteTask,
     </div>
     {groups.length ? <div className="crm-agenda-days">{groups.map((group) => <section key={group.day} className={`crm-agenda-day ${group.day && group.day < day ? "overdue" : ""}`}>
       <header className="crm-agenda-day-heading"><CalendarDays size={16} /><h2>{group.day === day ? "Hoje" : group.day ? new Date(`${group.day}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }) : "Sem data"}</h2><span>{group.tasks.length} atividade{group.tasks.length !== 1 ? "s" : ""}</span>{group.day && group.day < day && group.tasks.some((t) => !t.concluida) && <Badge status="alta">Em atraso</Badge>}</header>
-      {group.tasks.map((t) => { const lead = leadById.get(String(t.leadId)); const targetDate = postponeTaskDate(t.data, 1, day); return <article key={t.id} className={`crm-agenda-item ${t.concluida ? "done" : ""}`}>
-        <button className={`crm-task-check ${t.concluida ? "checked" : ""}`} aria-label={`${t.concluida ? "Reabrir" : "Concluir"} ${t.titulo}`} disabled={busy === t.id} onClick={() => run(t.id, async () => { await toggleTask(t.id); setMessage(t.concluida ? "Atividade reaberta." : "Atividade concluída."); })}>{t.concluida && <Check size={13} />}</button>
+      {group.tasks.map((t) => { const lead = leadById.get(String(t.leadId)); const recovery=t.reactivationCaseId&&t.tipoAuto==='reativacao'; const targetDate = postponeTaskDate(t.data, 1, day); return <article key={t.id} className={`crm-agenda-item ${t.concluida ? "done" : ""}`}>
+        <button className={`crm-task-check ${t.concluida ? "checked" : ""}`} aria-label={recovery?`Registrar atendimento de ${t.titulo}`:`${t.concluida ? "Reabrir" : "Concluir"} ${t.titulo}`} disabled={busy === t.id} onClick={() => recovery?goToReactivationCase(t.reactivationCaseId,t.leadId):run(t.id, async () => { await toggleTask(t.id); setMessage(t.concluida ? "Atividade reaberta." : "Atividade concluída."); })}>{t.concluida && <Check size={13} />}</button>
         <time className="crm-agenda-time">{t.hora?.slice(0, 5) || "—"}</time>
-        <div className="crm-agenda-copy"><button className="crm-link" onClick={() => setEditing(t)}>{t.titulo}</button><small><span>{TYPES[t.tipo] || t.tipo}</span>{lead ? <button className="crm-link" onClick={() => goToLead(lead.id)}>{lead.nome}</button> : <span>Atividade da equipe</span>}{t.prioridade === "alta" && <span>Prioridade alta</span>}</small>{t.descricao && <p>{t.descricao}</p>}</div>
+        <div className="crm-agenda-copy"><button className="crm-link" onClick={() => recovery?goToReactivationCase(t.reactivationCaseId,t.leadId):setEditing(t)}>{t.titulo}</button><small><span>{TYPES[t.tipo] || t.tipo}</span>{lead ? <button className="crm-link" onClick={() => goToLead(lead.id)}>{lead.nome}</button> : <span>Atividade da equipe</span>}{t.prioridade === "alta" && <span>Prioridade alta</span>}</small>{t.descricao && <p>{t.descricao}</p>}</div>
         <div className="crm-actions">
           {lead && wpp(lead.telefone) && <a className="crm-icon-btn" href={wpp(lead.telefone)} target="_blank" rel="noreferrer" aria-label={`WhatsApp de ${lead.nome}`}><MessageCircle size={14} /></a>}
-          {!t.concluida && <button className="crm-btn crm-btn-small" aria-label={`Adiar ${t.titulo} para ${date(targetDate)}`} disabled={busy === t.id} onClick={() => run(t.id, async () => { await updateTask(t.id, { data: targetDate }); setMessage(`Atividade reagendada para ${date(targetDate)} às ${t.hora?.slice(0, 5) || "horário não definido"}.`); })}><RotateCcw size={12} />{!t.data || t.data <= day ? "Amanhã" : "+1 dia"}</button>}
-          <button className="crm-icon-btn" aria-label={`Editar ${t.titulo}`} onClick={() => setEditing(t)}><Pencil size={13} /></button><button className="crm-icon-btn" aria-label={`Excluir ${t.titulo}`} onClick={() => setDeleting(t)}><Trash2 size={13} /></button>
+          {recovery?<button className="crm-btn crm-btn-small" onClick={()=>goToReactivationCase(t.reactivationCaseId,t.leadId)}>Abrir reativação</button>:<>
+           {!t.concluida && <button className="crm-btn crm-btn-small" aria-label={`Adiar ${t.titulo} para ${date(targetDate)}`} disabled={busy === t.id} onClick={() => run(t.id, async () => { await updateTask(t.id, { data: targetDate }); setMessage(`Atividade reagendada para ${date(targetDate)} às ${t.hora?.slice(0, 5) || "horário não definido"}.`); })}><RotateCcw size={12} />{!t.data || t.data <= day ? "Amanhã" : "+1 dia"}</button>}
+           <button className="crm-icon-btn" aria-label={`Editar ${t.titulo}`} onClick={() => setEditing(t)}><Pencil size={13} /></button><button className="crm-icon-btn" aria-label={`Excluir ${t.titulo}`} onClick={() => setDeleting(t)}><Trash2 size={13} /></button>
+          </>}
         </div>
       </article>; })}
     </section>)}</div> : <section className="crm-card"><Empty title="Nenhuma atividade nesta seleção" text="Ajuste os filtros ou agende uma atividade."><button className="crm-btn" onClick={() => setCreating(true)}>{visitsOnly ? "Agendar visita" : "Criar atividade"}</button></Empty></section>}

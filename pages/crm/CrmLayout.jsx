@@ -9,6 +9,7 @@ const Corretores = lazy(() => import("./Corretores.jsx"));
 const AddImovel = lazy(() => import("./AddImovel.jsx"));
 const Campanhas = lazy(() => import("./Campanhas.jsx"));
 const AlugueisCRM = lazy(() => import("./AlugueisCRM.jsx"));
+const Reativacao = lazy(() => import("./Reativacao.jsx"));
 import { createRentalRepository } from "../../lib/rentals.js";
 import * as db from "../../lib/db.js";
 import { filterPortfolio } from "../../lib/broker-workflow.js";
@@ -44,6 +45,7 @@ import {
   KeyRound,
   Menu,
   RefreshCw,
+  RotateCcw,
 } from "lucide-react";
 import "../../styles/crm.css";
 const MENU_GROUPS = [
@@ -60,6 +62,9 @@ const MENU_GROUPS = [
   ] },
   { label: "Locação", rentalOnly: true, items: [
     { id: "alugueis", label: "Carteira de aluguel", Icon: KeyRound },
+  ] },
+  { label: "Reativação", reactivationOnly: true, items: [
+    { id: "reativacao", label: "Reativação de leads", Icon: RotateCcw },
   ] },
   { label: "Gestão", adminOnly: true, items: [
     { id: "campanhas", label: "Campanhas e roleta", Icon: Megaphone },
@@ -274,12 +279,14 @@ export default function CrmLayout({
     [corretoresList, setCorretoresList] = useState([]),
     [currentProfile, setCurrentProfile] = useState(null),
     [rentalAccess, setRentalAccess] = useState(false),
+    [reactivationAccess, setReactivationAccess] = useState(false),
     [rentalAccessError, setRentalAccessError] = useState(""),
     [resourceStatus, setResourceStatus] = useState({}),
     [loaded, setLoaded] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [focusLeadId, setFocusLeadId] = useState(null),
+    [focusReactivationId, setFocusReactivationId] = useState(null),
     [mobileOpen, setMobileOpen] = useState(false),
     [portfolioScope, setPortfolioScope] = useState(() => {
       try { return localStorage.getItem(`vilavix:portfolio:${demo ? "review" : user?.id}`) || (demo ? "all" : "mine"); }
@@ -313,6 +320,7 @@ export default function CrmLayout({
     setLoaded(false);
     setCurrentProfile(null);
     setRentalAccess(false);
+    setReactivationAccess(false);
     setRentalAccessError("");
     setResourceStatus({});
     taskCache.current.reset();
@@ -327,7 +335,7 @@ export default function CrmLayout({
         (data.properties || []).forEach(p => merged.set(String(p.id), p));
         setImoveis([...merged.values()]);
         setCurrentProfile({ id: "broker-demo-a", nome: "Corretor Exemplo A", role: "admin" });
-        setRentalAccess(import.meta.env.DEV); setLoaded(true);
+        setRentalAccess(import.meta.env.DEV); setReactivationAccess(import.meta.env.DEV); setLoaded(true);
       }).catch(() => { if (live) setError("Não foi possível carregar a revisão local."); });
       return () => { live = false; };
     }
@@ -346,6 +354,7 @@ export default function CrmLayout({
       profiles: db.getProfiles,
       properties: db.getImoveis,
       rentalAccess: async () => ({ data: await createRentalRepository({ userId: user?.id }).getAccess() }),
+      reactivationAccess: db.getReactivationAccess,
     }, {
       onStatus: (name, status) => {
         setResourceStatus(previous => ({ ...previous, [name]: status }));
@@ -359,6 +368,7 @@ export default function CrmLayout({
         if (name === "profiles") setCorretoresList((data || []).map(dbToCorretor));
         if (name === "properties") setImoveis((data || []).map(row => ({ ...normalizeProperty(row), _imported: false })));
         if (name === "rentalAccess") setRentalAccess(data === true);
+        if (name === "reactivationAccess") setReactivationAccess(data === true);
       },
     });
     resourceLoader.current = loader;
@@ -368,12 +378,15 @@ export default function CrmLayout({
   useEffect(() => {
     if (demo || !profileReady || !currentProfile?.ativo) return;
     const next = crmResourcePlan(currentMenu);
-    void resourceLoader.current?.ensure([...next.required, ...next.background, "rentalAccess"]);
+    void resourceLoader.current?.ensure([...next.required, ...next.background, "rentalAccess", "reactivationAccess"]);
   }, [demo, currentMenu, profileReady, currentProfile?.ativo]);
+  useEffect(() => {
+    if(profileReady && reactivationAccess && currentProfile?.role !== "admin" && currentMenu === "dashboard") setMenu("reativacao");
+  },[profileReady,reactivationAccess,currentProfile?.role,currentMenu,setMenu]);
   const loadData = useCallback(() => {
     if (demo) return;
     const next = crmResourcePlan(currentMenu);
-    return resourceLoader.current?.ensure(["profile", ...next.required, ...next.background, "rentalAccess"], { refresh: true });
+    return resourceLoader.current?.ensure(["profile", ...next.required, ...next.background, "rentalAccess", "reactivationAccess"], { refresh: true });
   }, [demo, currentMenu]);
   useEffect(() => {
     if (!demo || !loaded) return;
@@ -624,6 +637,15 @@ export default function CrmLayout({
     setMenu(tipo === "visita" ? "visitas" : "tarefas");
     setMobileOpen(false);
   };
+  const invalidateContactWork = () => {
+    if(demo) return;
+    resourceLoader.current?.invalidate(["leads","tasks","visits","comments"]);
+    setLeads([]);setComments({});taskCache.current.reset();setTasks([]);setVisitTasks([]);
+  };
+  const goToReactivationCase = (id,leadId) => {
+    if(!reactivationAccess){if(leadId)goToLead(leadId);return;}
+    setFocusReactivationId(id);setMenu("reativacao");setMobileOpen(false);
+  };
   const shared = {
     leadCollectionFilter,
     setLeadCollectionFilter,
@@ -667,6 +689,10 @@ export default function CrmLayout({
     setMenu,
     refreshData: loadData,
     refreshLeads,
+    invalidateContactWork,
+    goToReactivationCase,
+    focusReactivationId,
+    setFocusReactivationId,
     setNotice,
   };
   const pages = {
@@ -677,6 +703,7 @@ export default function CrmLayout({
     tarefas: <Tarefas key="tarefas" {...shared} />,
     visitas: <Tarefas key="visitas" {...shared} visitsOnly />,
     campanhas: <Campanhas {...shared} />,
+    reativacao: reactivationAccess ? <Reativacao {...shared} /> : <section className="crm-panel crm-empty"><KeyRound size={28}/><h2>Reativação restrita</h2><p>Esta área está disponível para a funcionária vinculada e para os administradores.</p><button className="crm-btn" onClick={loadData}>Verificar acesso novamente</button></section>,
     alugueis: rentalAccess && (demo || currentProfile?.id === user?.id) ? (
       <AlugueisCRM {...shared} />
     ) : (
@@ -732,7 +759,7 @@ export default function CrmLayout({
           <div className="crm-brand-label">Área da equipe</div>
         </div>
         <nav aria-label="Navegação do CRM">
-          {MENU_GROUPS.filter(group => (!group.adminOnly || currentProfile?.role === "admin") && (!group.rentalOnly || rentalAccess)).map(group => (
+          {MENU_GROUPS.filter(group => (!group.adminOnly || currentProfile?.role === "admin") && (!group.rentalOnly || rentalAccess) && (!group.reactivationOnly || reactivationAccess)).map(group => (
             <div className="crm-nav-group" key={group.label}>
               <p className="crm-nav-caption">{group.label}</p>
               {group.items.map(({ id, label, Icon }) => (

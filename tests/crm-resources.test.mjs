@@ -52,3 +52,12 @@ test('consulta travada tem prazo, erro explícito e não bloqueia tentativa segu
   await loader.load('leads'); assert.equal(states.at(-1), 'error');
   await loader.load('leads'); assert.equal(states.at(-1), 'ready'); loader.dispose();
 });
+
+test('transferir um contato invalida cache sem aceitar a resposta antiga nem bloquear a nova consulta',async()=>{
+ const waiting=deferred(),data=[],states=[];let calls=0;
+ const loader=createCrmResourceLoader({leads:()=>++calls===1?waiting.promise:{data:['novo responsável']}},{onStatus:(_,s)=>states.push(s.state),onData:(_,rows)=>data.push(rows)});
+ const old=loader.load('leads');await Promise.resolve();loader.invalidate(['leads']);
+ await loader.load('leads');waiting.resolve({data:['responsável antigo']});await old;
+ assert.deepEqual(data,[['novo responsável']]);assert.ok(states.includes('idle'));
+ assert.deepEqual(crmResourcePlan('reativacao').required,['reactivationAccess','profiles']);loader.dispose();
+});
