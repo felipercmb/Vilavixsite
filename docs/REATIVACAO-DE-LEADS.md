@@ -12,7 +12,7 @@ A roleta dos reativados tem ordem e cursor próprios. A lista inicial sugerida u
 
 ## Critério de entrada
 
-O job `vilavix-lead-reactivation` verifica a fila a cada hora, em lotes de até 500. Também repara eventual falta de tarefa em acompanhamentos abertos. Só entram leads atribuídos, abertos (`novo`, `contato`, `atendimento`, `visita`, `proposta`), com pelo menos 14 dias completos desde `last_activity_at` e sem outro acompanhamento ativo. Fechados, descartados, contatos sem responsável e contatos já pertencentes à funcionária ficam fora.
+O job `vilavix-lead-reactivation` verifica a fila a cada hora, em lotes de até 500. Também repara eventual falta de tarefa em acompanhamentos abertos. Na captura automática por inatividade, só entram leads atribuídos, abertos (`novo`, `contato`, `atendimento`, `visita`, `proposta`), com pelo menos 14 dias completos desde `last_activity_at` e sem outro acompanhamento ativo. Fechados, descartados, contatos sem responsável e contatos já pertencentes à funcionária ficam fora dessa captura automática.
 
 O relógio registra alterações de cadastro/etapa/responsável, comentários autenticados e criação manual ou alterações efetivas de tarefas por integrantes ativos. A simples geração automática de lembretes e a mudança de carteira entre novos/prospecção não simulam atendimento. Corretores não podem forjar `last_activity_at` pelo cliente. Não existe um histórico completo das edições anteriores à instalação: o preenchimento inicial usa criação, última mudança de etapa e comentários humanos disponíveis. Esse limite é explicado na configuração antes da ativação.
 
@@ -49,10 +49,18 @@ Em **Gestão → Gestão do remalho** (`/crm/remalho`), administradores consulta
 
 Dias e limites de período usam America/Sao_Paulo, incluindo a data inicial e excluindo a meia-noite seguinte à data final. O gráfico mostra até os 14 últimos dias do período e distingue funcionária e supervisão. As listas são paginadas no servidor, com contagens integrais (incluindo mais de mil registros); busca e situação afetam somente as listas, não os indicadores. O histórico individual carrega todas as páginas. Exportar resumo gera CSV dos indicadores, sem confundir a página atual com uma exportação integral de contatos. O painel atualiza a cada minuto quando visível e oferece atualização manual.
 
-A aba abre vazia enquanto a funcionária não for cadastrada e vinculada. Dados fictícios são exclusivos da revisão em desenvolvimento; não há registros simulados em produção.
+Os indicadores de atendimento permanecem vazios enquanto a funcionária não for cadastrada e vinculada. Leads descartados incluídos pontualmente podem aparecer antes disso na fila **Aguardando atendente**. Dados fictícios são exclusivos da revisão em desenvolvimento; não há registros simulados em produção.
 
 ## Organização das telas
 
 A atendente pode priorizar atrasados, retornos de hoje ou agendados, navegar entre contatos mantendo os rascunhos nesta tela e consultar o último registro antes de escrever. Os atalhos de data apenas preenchem o formulário: a tarefa só muda após salvar com confirmação do banco. O histórico e as datas com hora usam Brasília.
 
-A gestão oferece três visualizações: **Visão geral**, **Atividades** e **Contatos**. O diário agrupa as atividades por data na página consultada; comentários extensos podem ser expandidos. No celular, contatos e resultados dos corretores usam listas com os mesmos campos das tabelas. O acesso às configurações permanece exclusivo do administrador, e a publicação desses refinamentos não ativa a reativação.
+A gestão oferece **Visão geral**, **Atividades**, **Contatos** e **Aguardando atendente**. O diário agrupa as atividades por data na página consultada; comentários extensos podem ser expandidos. No celular, contatos e resultados dos corretores usam listas com os mesmos campos das tabelas. O acesso às configurações permanece exclusivo do administrador, e a publicação desses refinamentos não ativa a reativação.
+
+## Inclusão pontual de descartados
+
+Descartados selecionados para uma nova tentativa entram em uma fila de espera administrativa, separada dos acompanhamentos ativos. **Aguardando atendente** mostra nome, imóvel/interesse, corretor anterior e data da inclusão, com busca e paginação. Essa lista considera todas as pendências e não usa os filtros de período ou responsável do relatório. Também não soma tentativas ou produtividade antes do início do acompanhamento.
+
+O lote guarda o retrato da inclusão e evita duplicação. Enquanto não houver atendente vinculada com o fluxo ativo, o lead mantém seu status e responsável. No processamento, o banco confirma novamente se o lead continua descartado e sem acompanhamento ativo; só então transfere à atendente e cria a tarefa. Contatos que mudaram de situação enquanto aguardavam são ignorados, com registro do motivo. Os históricos anteriores permanecem preservados.
+
+Essa inclusão é pontual: a regra recorrente de 14 dias continua restrita aos leads abertos. Encerrar um acompanhamento sem interesse não reinclui automaticamente o lead na espera. A fila de entrada e sua consulta permanecem restritas aos administradores.

@@ -227,3 +227,119 @@ test('encerramento exige comentário e não distribui; conta pausada e funcioná
   assert.equal((await one(db,'SELECT count(*)::int AS n FROM tasks WHERE reactivation_case_id=1 AND NOT concluida')).n,0);
  } finally {await db.close();}
 });
+
+async function discardedIntake(db) {
+ await root(db);
+ await db.exec(await readFile(new URL('../supabase/migrations/20261104200000_discarded_reactivation_intake.sql',import.meta.url),'utf8'));
+ await login(db,admin);
+}
+const enqueue=async(db,batch)=>(await one(db,'SELECT enqueue_discarded_reactivation($1) AS r',[batch])).r;
+const pendingIntake=async db=>(await one(db,'SELECT get_reactivation_intake() AS r')).r;
+
+test('discarded intake waits without changing leads, freezes each batch and deduplicates pending leads across batches',async()=>{
+ const {db}=await fixture();try {
+  await discardedIntake(db);
+  const before=await one(db,'SELECT status,corretor_id,corretor,last_activity_at FROM leads WHERE id=5');
+  const first=await enqueue(db,req(200));
+  assert.equal(first.queued,1);assert.equal(first.pendingCount,1);assert.equal(first.existingBatch,false);
+  let queue=await pendingIntake(db);
+  assert.equal(queue.items[0].lead_id,5);assert.equal(queue.items[0].previous_broker_name,'Corretor A');assert.equal(queue.items[0].status,'pending');
+  assert.equal((await one(db,'SELECT process_reactivation_queue(500) AS r')).r.moved,0);
+  assert.deepEqual(await one(db,'SELECT status,corretor_id,corretor,last_activity_at FROM leads WHERE id=5'),before);
+  assert.equal((await one(db,'SELECT count(*)::int AS n FROM reactivation_cases')).n,0);
+  assert.equal((await one(db,'SELECT count(*)::int AS n FROM tasks')).n,0);
+  await discardedIntake(db); // Reapplying the migration preserves the frozen queue.
+  await db.query("UPDATE leads SET corretor_id=$1,corretor='Corretor B',interesse='Interesse alterado após a inclusão' WHERE id=5",[b]);
+  assert.equal((await pendingIntake(db)).items[0].previous_broker_name,'Corretor A');
+  assert.equal((await pendingIntake(db)).items[0].interest,null);
+  await db.exec("UPDATE leads SET status='descartado' WHERE id=3");
+  const retry=await enqueue(db,req(200));assert.equal(retry.queued,0);assert.equal(retry.existingBatch,true);assert.equal(retry.pendingCount,1);
+  const next=await enqueue(db,req(201));assert.equal(next.queued,1);assert.equal(next.pendingCount,2);
+  assert.equal((await enqueue(db,req(202))).queued,0);
+  queue=await pendingIntake(db);assert.deepEqual(queue.items.map(i=>i.lead_id),[5,3]);
+  await root(db);assert.equal((await one(db,'SELECT count(*)::int AS n FROM reactivation_intake_batches')).n,3);
+ }finally{await db.close();}
+});
+
+test('discarded intake converts once with its own task, keeps the 14-day rule and never automatically recycles a closed case',async()=>{
+ const {db}=await fixture();try {
+  await discardedIntake(db);await enqueue(db,req(210));
+  await db.query('SELECT save_reactivation_settings($1,$2,true)',[worker,[a,b]]);
+  const result=(await one(db,'SELECT process_reactivation_queue(500) AS r')).r;
+  assert.equal(result.moved,3);assert.equal(result.intakeMoved,1);assert.equal(result.intakeSkipped,0);
+  assert.deepEqual((await db.query('SELECT lead_id FROM reactivation_cases ORDER BY lead_id')).rows,[{lead_id:1},{lead_id:2},{lead_id:5}]);
+  const discardedCase=await one(db,'SELECT * FROM reactivation_cases WHERE lead_id=5');
+  assert.equal(discardedCase.worker_id,worker);assert.equal(discardedCase.previous_broker_id,a);assert.equal(discardedCase.previous_broker_name,'Corretor A');
+  assert.deepEqual(await one(db,'SELECT status,corretor_id FROM leads WHERE id=5'),{status:'atendimento',corretor_id:worker});
+  let queue=await pendingIntake(db);assert.equal(queue.pendingCount,0);assert.equal(queue.convertedCount,1);
+  await db.exec('SELECT process_reactivation_queue(500)');
+  assert.equal((await one(db,'SELECT count(*)::int AS n FROM tasks WHERE reactivation_case_id=$1 AND NOT concluida',[discardedCase.id])).n,1);
+  await login(db,worker);await db.query('SELECT finish_reactivation($1,$2,false,$3)',[discardedCase.id,'Não deseja retomar a compra.',req(211)]);
+  await login(db,admin);assert.equal((await one(db,'SELECT process_reactivation_queue(500) AS r')).r.moved,0);
+  assert.equal((await enqueue(db,req(210))).queued,0);
+  assert.equal((await one(db,'SELECT count(*)::int AS n FROM reactivation_cases WHERE lead_id=5')).n,1);
+  assert.equal((await one(db,'SELECT count(*)::int AS n FROM reactivation_notes WHERE case_id=$1',[discardedCase.id])).n,1);
+  // A later explicit batch can request a fresh recovery; the closed case and its notes remain immutable history.
+  assert.equal((await enqueue(db,req(212))).queued,1);
+  assert.equal((await one(db,'SELECT process_reactivation_queue(500) AS r')).r.intakeMoved,1);
+  assert.equal((await one(db,'SELECT count(*)::int AS n FROM reactivation_cases WHERE lead_id=5')).n,2);
+  assert.equal((await one(db,'SELECT status FROM reactivation_cases WHERE id=$1',[discardedCase.id])).status,'closed');
+  assert.equal((await one(db,'SELECT count(*)::int AS n FROM reactivation_notes WHERE case_id=$1',[discardedCase.id])).n,1);
+ }finally{await db.close();}
+});
+
+test('discarded intake rechecks changed status and active cases before transfer',async()=>{
+ const {db}=await fixture();try {
+  await discardedIntake(db);await enqueue(db,req(220));
+  await db.exec("UPDATE leads SET status='fechado' WHERE id=5");
+  await db.query('SELECT save_reactivation_settings($1,$2,true)',[worker,[a,b]]);
+  const result=(await one(db,'SELECT process_reactivation_queue(500) AS r')).r;
+  assert.equal(result.intakeMoved,0);assert.equal(result.intakeSkipped,1);assert.equal(result.moved,2);
+  assert.deepEqual(await one(db,'SELECT status,corretor_id FROM leads WHERE id=5'),{status:'fechado',corretor_id:a});
+  assert.equal((await pendingIntake(db)).skippedCount,1);
+  await root(db);
+  await db.exec("UPDATE leads SET status='descartado' WHERE id=3");
+  await login(db,admin);await enqueue(db,req(221));
+  await root(db);
+  await db.query("INSERT INTO reactivation_cases(lead_id,worker_id,lead_name,previous_broker_id,previous_broker_name,inactive_since) VALUES(3,$1,'Já em acompanhamento',$2,'Corretor A',now())",[worker,a]);
+  await login(db,admin);
+  assert.equal((await one(db,'SELECT process_reactivation_queue(500) AS r')).r.intakeSkipped,1);
+  assert.equal((await enqueue(db,req(222))).queued,0);
+  assert.equal((await one(db,'SELECT count(*)::int AS n FROM reactivation_cases WHERE lead_id=3')).n,1);
+ }finally{await db.close();}
+});
+
+test('discarded intake is admin-only and has no authenticated direct write path',async()=>{
+ const {db}=await fixture();try {
+  await discardedIntake(db);await enqueue(db,req(230));
+  for(const id of [worker,a]) {
+   await login(db,id);
+   assert.equal((await db.query('SELECT id FROM reactivation_intake')).rows.length,0);
+   assert.equal((await db.query('SELECT id FROM reactivation_intake_batches')).rows.length,0);
+   await assert.rejects(enqueue(db,req(231)),e=>e.code==='42501');
+   await assert.rejects(pendingIntake(db),e=>e.code==='42501');
+  }
+  await login(db,admin);await assert.rejects(db.exec("UPDATE reactivation_intake SET status='skipped'"),e=>e.code==='42501');
+  await root(db);await db.exec('SET ROLE anon');await assert.rejects(pendingIntake(db),e=>e.code==='42501');
+  await assert.rejects(enqueue(db,req(232)),e=>e.code==='42501');
+  await root(db);await db.exec('SET ROLE service_role');assert.equal((await enqueue(db,req(233))).queued,0);
+ }finally{await db.close();}
+});
+
+test('discarded conversion respects the shared batch limit and rolls back when task creation fails',async()=>{
+ const {db}=await fixture();try {
+  await discardedIntake(db);await enqueue(db,req(240));
+  await db.query('SELECT save_reactivation_settings($1,$2,true)',[worker,[a,b]]);
+  await root(db);
+  await db.exec("CREATE FUNCTION fail_intake_task() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF NEW.lead_id=5 AND NEW.reactivation_case_id IS NOT NULL THEN RAISE EXCEPTION 'Falha simulada ao agendar descartado'; END IF; RETURN NEW; END;$$; CREATE TRIGGER simulate_intake_task_failure BEFORE INSERT ON tasks FOR EACH ROW EXECUTE FUNCTION fail_intake_task();");
+  await login(db,admin);await assert.rejects(db.exec('SELECT process_reactivation_queue(1)'),/Falha simulada/);
+  assert.equal((await pendingIntake(db)).pendingCount,1);
+  assert.equal((await one(db,'SELECT count(*)::int AS n FROM reactivation_cases')).n,0);
+  assert.deepEqual(await one(db,'SELECT status,corretor_id FROM leads WHERE id=5'),{status:'descartado',corretor_id:a});
+  await root(db);await db.exec('DROP TRIGGER simulate_intake_task_failure ON tasks');
+  await login(db,admin);const result=(await one(db,'SELECT process_reactivation_queue(1) AS r')).r;
+  assert.equal(result.moved,1);assert.equal(result.intakeMoved,1);
+  assert.deepEqual((await db.query('SELECT lead_id FROM reactivation_cases')).rows,[{lead_id:5}]);
+  assert.equal((await one(db,'SELECT process_reactivation_queue(1) AS r')).r.moved,1);
+ }finally{await db.close();}
+});
